@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Turn your Amazon Kindle into a pocket Linux computer.</strong><br>
-  Run Debian, Alpine, Arch, or any ARM distro — without touching the stock system.
+  Run Debian, Alpine, Arch, or any ARM distro  without touching the stock system.
 </p>
 
 <p align="center">
@@ -74,16 +74,24 @@ A set of scripts and a KUAL extension that let you run **any** ARM Linux distrib
 
 ### Step 1: Build the rootfs image
 
+**One-liner (no clone needed):**
+
+```bash
+curl -sL https://raw.githubusercontent.com/Sqrilizz/kindle-linux-chroot/main/scripts/build_rootfs.sh | sudo bash
+```
+
+This launches the interactive menu. Or with arguments:
+
+```bash
+curl -sL https://raw.githubusercontent.com/Sqrilizz/kindle-linux-chroot/main/scripts/build_rootfs.sh | sudo bash -s -- --distro debian --size 1024
+```
+
+**Or clone the repo:**
+
 ```bash
 git clone https://github.com/sqrilizz/kindle-linux-chroot.git
 cd kindle-linux-chroot/scripts
-chmod +x build_rootfs.sh
-
-# Debian (recommended)
-sudo ./build_rootfs.sh --distro debian --size 1024
-
-# Alpine (lightweight, ~50MB used)
-sudo ./build_rootfs.sh --distro alpine --size 256
+sudo bash build_rootfs.sh
 ```
 
 This produces a `debian.ext3` (or `alpine.ext3`) file ready for the Kindle.

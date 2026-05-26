@@ -16,6 +16,10 @@ unmount_chroot() {
     fi
 }
 
-unmount_chroot /tmp/debian
-unmount_chroot /tmp/alpine
+for img in /mnt/us/*.ext3; do
+    [ -f "$img" ] || continue
+    NAME=$(basename "$img" .ext3)
+    unmount_chroot "/tmp/${NAME}"
+done
+
 echo "All chroots stopped."

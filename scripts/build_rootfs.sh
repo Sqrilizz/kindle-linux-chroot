@@ -1,11 +1,8 @@
 #!/bin/bash
-# Universal Kindle Rootfs Bootstrap Script
-# Supports: Debian, Alpine Linux (ARMhf architecture)
-
 set -e
 
-DISTRO="debian"
-SIZE_MB=1024
+DISTRO=""
+SIZE_MB=""
 OUTPUT_DIR="."
 ROOTFS_URL=""
 ROOTFS_FILE=""
@@ -20,15 +17,92 @@ usage() {
     echo "  --rootfs-file <path>      Local path to armhf rootfs tarball (for --distro custom)"
     echo "  -h, --help                Show this help"
     echo ""
-    echo "Examples:"
-    echo "  sudo $0 --distro debian --size 1024"
-    echo "  sudo $0 --distro arch --size 2048"
-    echo "  sudo $0 --distro custom --rootfs-url https://example.com/rootfs-armhf.tar.gz --size 1024"
-    echo "  sudo $0 --distro custom --rootfs-file /path/to/rootfs.tar.gz --size 512"
+    echo "Run without arguments for interactive mode."
     exit 1
 }
 
-# Parse arguments
+interactive_menu() {
+    echo ""
+    echo "  ╔══════════════════════════════════════╗"
+    echo "  ║   Kindle Linux Chroot Builder        ║"
+    echo "  ╚══════════════════════════════════════╝"
+    echo ""
+    echo "  Select distro:"
+    echo ""
+    echo "    1) Debian       (recommended, ~500MB)"
+    echo "    2) Alpine       (lightweight, ~50MB)"
+    echo "    3) Arch Linux   (rolling release, ~1.5GB)"
+    echo "    4) Custom       (provide your own rootfs)"
+    echo ""
+    printf "  Choice [1]: "
+    read DISTRO_CHOICE < /dev/tty
+    [ -z "$DISTRO_CHOICE" ] && DISTRO_CHOICE=1
+
+    case $DISTRO_CHOICE in
+        1) DISTRO="debian" ;;
+        2) DISTRO="alpine" ;;
+        3) DISTRO="arch" ;;
+        4) DISTRO="custom" ;;
+        *) echo "  Invalid choice"; exit 1 ;;
+    esac
+
+    echo ""
+    if [ "$DISTRO" = "arch" ]; then
+        DEFAULT_SIZE=2048
+    elif [ "$DISTRO" = "alpine" ]; then
+        DEFAULT_SIZE=256
+    else
+        DEFAULT_SIZE=1024
+    fi
+    printf "  Image size in MB [$DEFAULT_SIZE]: "
+    read SIZE_INPUT < /dev/tty
+    SIZE_MB="${SIZE_INPUT:-$DEFAULT_SIZE}"
+
+    echo ""
+    printf "  Output directory [.]: "
+    read OUT_INPUT < /dev/tty
+    OUTPUT_DIR="${OUT_INPUT:-.}"
+
+    if [ "$DISTRO" = "custom" ]; then
+        echo ""
+        echo "  How to provide rootfs?"
+        echo "    1) Download from URL"
+        echo "    2) Local file"
+        printf "  Choice [1]: "
+        read CUSTOM_CHOICE < /dev/tty
+        [ -z "$CUSTOM_CHOICE" ] && CUSTOM_CHOICE=1
+        if [ "$CUSTOM_CHOICE" = "2" ]; then
+            printf "  Path to tarball: "
+            read ROOTFS_FILE < /dev/tty
+        else
+            echo ""
+            echo "  Where to get a direct link:"
+            echo "    Void:   https://repo-default.voidlinux.org/live/current/"
+            echo "            look for void-armv7l-ROOTFS-*.tar.xz"
+            echo "    Ubuntu: https://cdimage.ubuntu.com/ubuntu-base/releases/"
+            echo "            look for *-base-armhf.tar.gz"
+            echo "    pmOS:   https://images.postmarketos.org/bpo/"
+            echo ""
+            printf "  URL to tarball: "
+            read ROOTFS_URL < /dev/tty
+        fi
+    fi
+
+    echo ""
+    echo "  ─────────────────────────────────────"
+    echo "  Distro:  $DISTRO"
+    echo "  Size:    ${SIZE_MB}MB"
+    echo "  Output:  $OUTPUT_DIR"
+    echo "  ─────────────────────────────────────"
+    echo ""
+    printf "  Proceed? [Y/n]: "
+    read CONFIRM < /dev/tty
+    case "$CONFIRM" in
+        n|N|no|No) echo "  Aborted."; exit 0 ;;
+    esac
+    echo ""
+}
+
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --distro) DISTRO="$2"; shift ;;
@@ -42,12 +116,17 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+if [ -z "$DISTRO" ]; then
+    interactive_menu
+fi
+
+[ -z "$SIZE_MB" ] && SIZE_MB=1024
+
 if [ "$EUID" -ne 0 ]; then
     echo "Error: This script must be run with sudo/root privileges."
     exit 1
 fi
 
-# Check dependencies
 echo "[*] Checking host dependencies..."
 for cmd in dd mkfs.ext3 qemu-arm-static; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -67,18 +146,15 @@ echo " Size:         $SIZE_MB MB"
 echo " Destination:  $IMG_PATH"
 echo "=============================================="
 
-# 1. Create blank ext3 image
 echo "[*] Allocating sparse image..."
 dd if=/dev/zero of="$IMG_PATH" bs=1M count="$SIZE_MB"
 echo "[*] Formatting as ext3..."
 mkfs.ext3 -F "$IMG_PATH"
 
-# 2. Mount image
 echo "[*] Mounting image to temporary path..."
 mkdir -p "$MNT_DIR"
 mount -o loop "$IMG_PATH" "$MNT_DIR"
 
-# Clean up mounts on failure
 cleanup() {
     echo "[*] Cleaning up mounts..."
     umount "$MNT_DIR" 2>/dev/null || true
@@ -86,7 +162,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 3. Bootstrap target filesystem
 if [ "$DISTRO" = "debian" ]; then
     if ! command -v debootstrap >/dev/null 2>&1; then
         echo "Error: 'debootstrap' is required for Debian. Install it first."
@@ -101,7 +176,6 @@ if [ "$DISTRO" = "debian" ]; then
     echo "[*] Running Debian Stage 2 (Second Stage)..."
     chroot "$MNT_DIR" /debootstrap/debootstrap --second-stage
     
-    # Configure networking and APT
     echo "nameserver 8.8.8.8" > "$MNT_DIR/etc/resolv.conf"
     echo "kindle" > "$MNT_DIR/etc/hostname"
     cat > "$MNT_DIR/etc/apt/sources.list" << EOF
@@ -110,11 +184,9 @@ deb http://deb.debian.org/debian bookworm-updates main
 deb http://security.debian.org/debian-security bookworm-security main
 EOF
     
-    # Set default root password
     echo "[*] Setting root password to 'kindle'..."
     chroot "$MNT_DIR" /usr/sbin/chpasswd <<< "root:kindle"
 
-    # Add custom kindle commands profile
     echo "[*] Installing custom chroot bash profile..."
     cat > "$MNT_DIR/etc/profile.d/kindle.sh" << 'EOF'
 export LANG=C.UTF-8
@@ -176,12 +248,23 @@ alias quit='exit'
     fi
 }
 
-echo "Kindle Debian - type /help for commands"
+cat << 'BANNER'
+
+▗▖ ▄▖  █          ▗▖▗▄▖              ▄▄ ▗▖
+▐▌▐▛   ▀          ▐▌▝▜▌             █▀▀▌▐▌                   ▐▌
+▐▙█   ██  ▐▙██▖ ▟█▟▌ ▐▌   ▟█▙      ▐▛   ▐▙██▖ █▟█▌ ▟█▙  ▟█▙ ▐███
+▐██    █  ▐▛ ▐▌▐▛ ▜▌ ▐▌  ▐▙▄▟▌     ▐▌   ▐▛ ▐▌ █▘  ▐▛ ▜▌▐▛ ▜▌ ▐▌
+▐▌▐▙   █  ▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▛▀▀▘     ▐▙   ▐▌ ▐▌ █   ▐▌ ▐▌▐▌ ▐▌ ▐▌
+▐▌ █▖▗▄█▄▖▐▌ ▐▌▝█▄█▌ ▐▙▄ ▝█▄▄▌      █▄▄▌▐▌ ▐▌ █   ▝█▄█▘▝█▄█▘ ▐▙▄
+▝▘ ▝▘▝▀▀▀▘▝▘ ▝▘ ▝▀▝▘  ▀▀  ▝▀▀        ▀▀ ▝▘ ▝▘ ▀    ▝▀▘  ▝▀▘   ▀▀
+
+BANNER
+echo "  Debian | type /help for commands"
+echo ""
 EOF
 
 elif [ "$DISTRO" = "alpine" ]; then
     echo "[*] Bootstrapping Alpine Linux (armhf)..."
-    # Download static apk tool for bootstrap
     APK_STATIC="/tmp/apk-tools-static"
     if [ ! -f "$APK_STATIC" ]; then
         echo "[*] Downloading apk.static..."
@@ -190,7 +273,6 @@ elif [ "$DISTRO" = "alpine" ]; then
         chmod +x "$APK_STATIC"
     fi
     
-    # Bootstrap Alpine core
     "$APK_STATIC" --repository http://dl-cdn.alpinelinux.org/alpine/v3.19/main \
                   --update-cache \
                   --allow-untrusted \
@@ -199,15 +281,12 @@ elif [ "$DISTRO" = "alpine" ]; then
                   init \
                   alpine-base alpine-keys apk-tools-static
                   
-    # Set up networking & DNS inside Alpine
     echo "nameserver 8.8.8.8" > "$MNT_DIR/etc/resolv.conf"
     echo "http://dl-cdn.alpinelinux.org/alpine/v3.19/main" > "$MNT_DIR/etc/apk/repositories"
     echo "http://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> "$MNT_DIR/etc/apk/repositories"
     
-    # Configure root password (blank by default in Alpine, let's set 'kindle')
     echo "root:kindle" | chroot "$MNT_DIR" chpasswd
     
-    # Add custom kindle commands profile
     echo "[*] Installing custom chroot ash profile..."
     cat > "$MNT_DIR/etc/profile" << 'EOF'
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -235,7 +314,19 @@ alias quit='exit'
     echo "  /help       - this help"
     echo "=============================="
 }
-echo "Kindle Alpine - type /help for commands"
+cat << 'BANNER'
+
+▗▖ ▄▖  █          ▗▖▗▄▖              ▄▄ ▗▖
+▐▌▐▛   ▀          ▐▌▝▜▌             █▀▀▌▐▌                   ▐▌
+▐▙█   ██  ▐▙██▖ ▟█▟▌ ▐▌   ▟█▙      ▐▛   ▐▙██▖ █▟█▌ ▟█▙  ▟█▙ ▐███
+▐██    █  ▐▛ ▐▌▐▛ ▜▌ ▐▌  ▐▙▄▟▌     ▐▌   ▐▛ ▐▌ █▘  ▐▛ ▜▌▐▛ ▜▌ ▐▌
+▐▌▐▙   █  ▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▛▀▀▘     ▐▙   ▐▌ ▐▌ █   ▐▌ ▐▌▐▌ ▐▌ ▐▌
+▐▌ █▖▗▄█▄▖▐▌ ▐▌▝█▄█▌ ▐▙▄ ▝█▄▄▌      █▄▄▌▐▌ ▐▌ █   ▝█▄█▘▝█▄█▘ ▐▙▄
+▝▘ ▝▘▝▀▀▀▘▝▘ ▝▘ ▝▀▝▘  ▀▀  ▝▀▀        ▀▀ ▝▘ ▝▘ ▀    ▝▀▘  ▝▀▘   ▀▀
+
+BANNER
+echo "  Alpine | type /help for commands"
+echo ""
 EOF
 
 elif [ "$DISTRO" = "arch" ]; then
@@ -319,7 +410,19 @@ alias quit='exit'
         /ssh
     fi
 }
-echo "Kindle Arch - type /help for commands"
+cat << 'BANNER'
+
+▗▖ ▄▖  █          ▗▖▗▄▖              ▄▄ ▗▖
+▐▌▐▛   ▀          ▐▌▝▜▌             █▀▀▌▐▌                   ▐▌
+▐▙█   ██  ▐▙██▖ ▟█▟▌ ▐▌   ▟█▙      ▐▛   ▐▙██▖ █▟█▌ ▟█▙  ▟█▙ ▐███
+▐██    █  ▐▛ ▐▌▐▛ ▜▌ ▐▌  ▐▙▄▟▌     ▐▌   ▐▛ ▐▌ █▘  ▐▛ ▜▌▐▛ ▜▌ ▐▌
+▐▌▐▙   █  ▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▛▀▀▘     ▐▙   ▐▌ ▐▌ █   ▐▌ ▐▌▐▌ ▐▌ ▐▌
+▐▌ █▖▗▄█▄▖▐▌ ▐▌▝█▄█▌ ▐▙▄ ▝█▄▄▌      █▄▄▌▐▌ ▐▌ █   ▝█▄█▘▝█▄█▘ ▐▙▄
+▝▘ ▝▘▝▀▀▀▘▝▘ ▝▘ ▝▀▝▘  ▀▀  ▝▀▀        ▀▀ ▝▘ ▝▘ ▀    ▝▀▘  ▝▀▘   ▀▀
+
+BANNER
+echo "  Arch | type /help for commands"
+echo ""
 EOF
 
 elif [ "$DISTRO" = "custom" ]; then

@@ -2,32 +2,41 @@
 
 KTERM=/mnt/us/extensions/kterm
 
-IMG=""
-for candidate in debian arch alpine ubuntu void custom; do
-    if [ -f "/mnt/us/${candidate}.ext3" ]; then
-        IMG="/mnt/us/${candidate}.ext3"
-        MNT="/tmp/${candidate}"
-        break
-    fi
+IMAGES=""
+COUNT=0
+for f in /mnt/us/*.ext3; do
+    [ -f "$f" ] || continue
+    COUNT=$((COUNT + 1))
+    IMAGES="${IMAGES} ${f}"
 done
 
-if [ -z "$IMG" ]; then
-    IMG=$(find /mnt/us -maxdepth 1 -name "*.ext3" | head -1)
-    if [ -n "$IMG" ]; then
-        NAME=$(basename "$IMG" .ext3)
-        MNT="/tmp/${NAME}"
-    fi
-fi
-
-if [ -z "$IMG" ]; then
+if [ "$COUNT" -eq 0 ]; then
     echo "No rootfs image found! Place <distro>.ext3 in /mnt/us/"
     exit 1
+elif [ "$COUNT" -eq 1 ]; then
+    IMG=$(echo "$IMAGES" | tr -s ' ' | cut -d' ' -f2)
+    NAME=$(basename "$IMG" .ext3)
+    MNT="/tmp/${NAME}"
+else
+    echo "=== Select distro ==="
+    I=1
+    for f in $IMAGES; do
+        NAME=$(basename "$f" .ext3)
+        echo "  ${I}) ${NAME}"
+        I=$((I + 1))
+    done
+    echo "====================="
+    printf "Choice [1]: "
+    read CHOICE
+    [ -z "$CHOICE" ] && CHOICE=1
+    IMG=$(echo "$IMAGES" | tr -s ' ' | cut -d' ' -f$((CHOICE + 1)))
+    NAME=$(basename "$IMG" .ext3)
+    MNT="/tmp/${NAME}"
 fi
 
-if [ -f "$MNT/bin/bash" ] || [ -f "$MNT/usr/bin/bash" ] 2>/dev/null; then
-    SHELL_CMD="/bin/bash -l"
-else
-    SHELL_CMD="/bin/sh -l"
+if [ -z "$IMG" ] || [ ! -f "$IMG" ]; then
+    echo "Invalid selection"
+    exit 1
 fi
 
 if ! mount | grep -q "$MNT"; then
@@ -43,6 +52,12 @@ if ! mount | grep -q "$MNT"; then
     mkdir -p "$MNT/run/dbus"
     mount -o bind /var/run/dbus/ "$MNT/run/dbus/" 2>/dev/null
     cp /etc/resolv.conf "$MNT/etc/resolv.conf" 2>/dev/null
+fi
+
+if [ -f "$MNT/bin/bash" ] || [ -f "$MNT/usr/bin/bash" ]; then
+    SHELL_CMD="/bin/bash -l"
+else
+    SHELL_CMD="/bin/sh -l"
 fi
 
 DPI=$(cat /var/log/Xorg.0.log 2>/dev/null | grep DPI | sed -n 's/.*(\([0-9]\+\), [0-9]\+).*/\1/p')

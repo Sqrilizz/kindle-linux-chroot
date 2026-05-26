@@ -30,6 +30,15 @@ if [ "$DISTRO" = "alpine" ]; then
         dropbear -R -p 0.0.0.0:2222 -B
         echo "[OK] Dropbear SSH running on port 2222"
     '
+elif [ "$DISTRO" = "arch" ]; then
+    chroot "$MNT" /bin/bash -c '
+        if ! command -v dropbear >/dev/null 2>&1; then
+            pacman -Sy --noconfirm dropbear
+        fi
+        killall dropbear 2>/dev/null
+        dropbear -R -p 0.0.0.0:2222 -B
+        echo "[OK] Dropbear SSH running on port 2222"
+    '
 else
     chroot "$MNT" /bin/bash -c '
         if ! command -v dropbear >/dev/null 2>&1; then
