@@ -1,0 +1,29 @@
+{
+    "items": [
+        {
+            "name": "Linux Chroot",
+            "priority": 0,
+            "items": [
+                {
+                    "name": "Start Terminal",
+                    "priority": 1,
+                    "action": "/bin/sh /mnt/us/extensions/LinuxChroot/bin/shell.sh",
+                    "status": false,
+                    "exitmenu": true
+                },
+                {
+                    "name": "Start SSH Server",
+                    "priority": 2,
+                    "action": "/bin/sh /mnt/us/start-ssh.sh",
+                    "status": false
+                },
+                {
+                    "name": "Stop Chroot",
+                    "priority": 3,
+                    "action": "/bin/sh /mnt/us/extensions/LinuxChroot/bin/stop.sh",
+                    "status": false
+                }
+            ]
+        }
+    ]
+}
