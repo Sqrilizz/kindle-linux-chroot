@@ -1,5 +1,4 @@
 #!/bin/sh
-# Stop and unmount all Linux chroots
 
 unmount_chroot() {
     MNT="$1"

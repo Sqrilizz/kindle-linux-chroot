@@ -1,24 +1,35 @@
 #!/bin/sh
-# Mount Linux chroot and open kterm inside it
-# Automatically detects which distro image is available
 
 KTERM=/mnt/us/extensions/kterm
 
-# Auto-detect distro: prefer debian, fallback to alpine
-if [ -f /mnt/us/debian.ext3 ]; then
-    IMG=/mnt/us/debian.ext3
-    MNT=/tmp/debian
-    SHELL_CMD="/bin/bash -l"
-elif [ -f /mnt/us/alpine.ext3 ]; then
-    IMG=/mnt/us/alpine.ext3
-    MNT=/tmp/alpine
-    SHELL_CMD="/bin/sh -l"
-else
-    echo "No rootfs image found! Place debian.ext3 or alpine.ext3 in /mnt/us/"
+IMG=""
+for candidate in debian arch alpine ubuntu void custom; do
+    if [ -f "/mnt/us/${candidate}.ext3" ]; then
+        IMG="/mnt/us/${candidate}.ext3"
+        MNT="/tmp/${candidate}"
+        break
+    fi
+done
+
+if [ -z "$IMG" ]; then
+    IMG=$(find /mnt/us -maxdepth 1 -name "*.ext3" | head -1)
+    if [ -n "$IMG" ]; then
+        NAME=$(basename "$IMG" .ext3)
+        MNT="/tmp/${NAME}"
+    fi
+fi
+
+if [ -z "$IMG" ]; then
+    echo "No rootfs image found! Place <distro>.ext3 in /mnt/us/"
     exit 1
 fi
 
-# Mount if not already mounted
+if [ -f "$MNT/bin/bash" ] || [ -f "$MNT/usr/bin/bash" ] 2>/dev/null; then
+    SHELL_CMD="/bin/bash -l"
+else
+    SHELL_CMD="/bin/sh -l"
+fi
+
 if ! mount | grep -q "$MNT"; then
     mkdir -p "$MNT"
     mount -o loop,noatime -t ext3 "$IMG" "$MNT" || {
@@ -34,7 +45,6 @@ if ! mount | grep -q "$MNT"; then
     cp /etc/resolv.conf "$MNT/etc/resolv.conf" 2>/dev/null
 fi
 
-# Get DPI for keyboard layout
 DPI=$(cat /var/log/Xorg.0.log 2>/dev/null | grep DPI | sed -n 's/.*(\([0-9]\+\), [0-9]\+).*/\1/p')
 PARAM=""
 if [ -n "$DPI" ] && [ "$DPI" -gt 290 ] 2>/dev/null; then

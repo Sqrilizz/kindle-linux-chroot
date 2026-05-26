@@ -1,16 +1,40 @@
-# Kindle Linux Chroot
-
-> Turn your Amazon Kindle into a pocket Linux computer. Run Debian, Alpine, Ubuntu, or Arch Linux ARM — all without touching the stock system.
+<h1 align="center">Kindle Linux Chroot</h1>
 
 <p align="center">
-  <img src="docs/screenshot.jpg" width="300" alt="Debian running on Kindle via kterm">
+  <strong>Turn your Amazon Kindle into a pocket Linux computer.</strong><br>
+  Run Debian, Alpine, Arch, or any ARM distro — without touching the stock system.
 </p>
 
-## What is this?
+<p align="center">
+  <a href="#quick-start"><img src="https://img.shields.io/badge/get_started-blue?style=for-the-badge" alt="Get Started"></a>
+  <a href="#supported-distros"><img src="https://img.shields.io/badge/distros-3-green?style=for-the-badge" alt="Distros"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow?style=for-the-badge" alt="License"></a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshot.jpg" width="320" alt="Debian running on Kindle via kterm">
+</p>
+
+---
+
+## Overview
 
 A set of scripts and a KUAL extension that let you run **any** ARM Linux distribution inside a `chroot` on a jailbroken Kindle. Your Kindle stays completely intact — everything lives inside a single `.ext3` image file on the USB storage partition.
 
 **No dual-boot. No reflash. No risk. Just pure Linux on e-ink.**
+
+### Table of Contents
+
+- [Features](#features)
+- [Supported Distros](#supported-distros)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Shell Commands](#built-in-shell-commands)
+- [Examples](#examples)
+- [How it Works](#how-it-works-technical)
+- [Tested Hardware](#tested-hardware)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
 
 ### Features
 
@@ -22,15 +46,17 @@ A set of scripts and a KUAL extension that let you run **any** ARM Linux distrib
 
 ### Supported Distros
 
-| Distro | Status | Package Manager | Notes |
-|--------|--------|----------------|-------|
-| Debian Bookworm | Fully tested | `apt` | Recommended for beginners |
-| Alpine 3.19 | Tested | `apk` | Ultra-lightweight (~8MB base) |
-| Ubuntu 22.04 | Should work | `apt` | Use `--distro ubuntu` with debootstrap |
-| Arch Linux ARM | Should work | `pacman` | Manual bootstrap required |
-| Void Linux | Should work | `xbps` | Manual bootstrap required |
+| Distro | Status | Package Manager | Build flag |
+|--------|--------|----------------|-----------|
+| Debian Bookworm | Fully tested | `apt` | `--distro debian` |
+| Alpine 3.19 | Tested | `apk` | `--distro alpine` |
+| Arch Linux ARM | Fully tested | `pacman` | `--distro arch` |
+| Ubuntu 22.04 | Should work | `apt` | `--distro custom --rootfs-url <url>` |
+| Void Linux | Should work | `xbps` | `--distro custom --rootfs-url <url>` |
+| postmarketOS | Should work | `apk` | `--distro custom --rootfs-file <path>` |
+| Any armhf distro | Use custom | varies | `--distro custom --rootfs-url <url>` |
 
-> Any distro that provides an `armhf` (ARMv7 hard-float) rootfs can be used.
+> Any distro that provides an `armhf` (ARMv7 hard-float) rootfs tarball can be used with the `--distro custom` flag.
 
 ---
 
@@ -49,7 +75,7 @@ A set of scripts and a KUAL extension that let you run **any** ARM Linux distrib
 ### Step 1: Build the rootfs image
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/kindle-linux-chroot.git
+git clone https://github.com/sqrilizz/kindle-linux-chroot.git
 cd kindle-linux-chroot/scripts
 chmod +x build_rootfs.sh
 
@@ -122,10 +148,7 @@ Once inside the chroot, these custom commands are available:
 | Command | Description |
 |---------|-------------|
 | `/help` | Show all available commands |
-| `/exit` | Cleanly exit the chroot |
-| `/landscape` | Rotate screen to landscape mode |
-| `/portrait` | Rotate screen back to portrait |
-| `/rotate` | Toggle between portrait/landscape |
+| `exit` | Cleanly exit the chroot |
 | `/ssh` | Start SSH server (installs dropbear if needed) |
 | `/wifi` | Show current Wi-Fi IP address |
 | `/info` | Display system info (RAM, disk, kernel) |
@@ -134,59 +157,212 @@ Once inside the chroot, these custom commands are available:
 
 ## Examples
 
-### Install Python and run a script
+### First boot — update and install basics
 
 ```bash
+# First thing after entering the chroot:
 apt-get update
-apt-get install -y python3 python3-pip
-python3 -c "print('Hello from Kindle!')"
+apt-get install -y neofetch curl wget git nano htop
+neofetch
 ```
 
-### Run a web server
+### Set up SSH for remote access
+
+Instead of typing on the Kindle's tiny keyboard, SSH in from your PC:
 
 ```bash
+# Inside the chroot on Kindle:
+apt-get install -y dropbear
+dropbear -R -p 0.0.0.0:2222 -B
+
+# Now from your PC:
+ssh root@192.168.1.42 -p 2222
+# Password: kindle
+```
+
+### Install Python and run scripts
+
+```bash
+apt-get install -y python3 python3-pip
+python3 -c "print('Hello from Kindle!')"
+
+# Install packages
+pip3 install requests
+python3 -c "import requests; print(requests.get('https://ifconfig.me').text)"
+```
+
+### Run a local web server
+
+```bash
+# Serve files from the Kindle over Wi-Fi
 apt-get install -y python3
-python3 -m http.server 8080 &
-# Access from your PC: http://<kindle-ip>:8080
+mkdir -p /srv/www && echo "<h1>Served from Kindle!</h1>" > /srv/www/index.html
+cd /srv/www && python3 -m http.server 8080 &
+
+# Access from any device on your network:
+# http://<kindle-ip>:8080
 ```
 
 ### Install Node.js
 
 ```bash
 apt-get install -y nodejs npm
-node -e "console.log('Node.js ' + process.version + ' on Kindle!')"
+node -e "console.log('Node.js ' + process.version + ' running on Kindle!')"
+
+# Run a simple express server
+npm init -y && npm install express
+node -e "
+const app = require('express')();
+app.get('/', (req, res) => res.send('Hello from Kindle!'));
+app.listen(3000, () => console.log('http://0.0.0.0:3000'));
+"
 ```
 
-### Compile C code natively
+### Compile and run C code natively on Kindle
 
 ```bash
-apt-get install -y gcc
-echo '#include <stdio.h>
-int main() { printf("Compiled on Kindle!\\n"); return 0; }' > hello.c
-gcc -o hello hello.c
-./hello
+apt-get install -y gcc make
+
+cat > hello.c << 'EOF'
+#include <stdio.h>
+#include <sys/utsname.h>
+
+int main() {
+    struct utsname buf;
+    uname(&buf);
+    printf("Hello from %s %s (%s)\n", buf.sysname, buf.release, buf.machine);
+    return 0;
+}
+EOF
+
+gcc -o hello hello.c && ./hello
+# Output: Hello from Linux 4.1.15 (armv7l)
 ```
 
-### Install neofetch
+### Use as a penetration testing tool
 
 ```bash
-apt-get install -y neofetch
-neofetch
+apt-get install -y nmap netcat-openbsd dnsutils whois tcpdump
+
+# Scan your local network
+nmap -sn 192.168.1.0/24
+
+# Port scan a host
+nmap -sV 192.168.1.1
+
+# DNS lookup
+dig google.com
+
+# Listen on a port
+nc -lvp 4444
 ```
 
-### Run a Git repo
+### Run a Minecraft server (yes, really)
+
+```bash
+# Install Java (headless)
+apt-get install -y default-jre-headless
+
+# Download a lightweight MC server
+wget https://pocketmine-mp.github.io/bedrock-data/pocketmine.phar
+php pocketmine.phar
+# (Note: very slow on 256MB RAM, but it works for 1-2 players on LAN)
+```
+
+### Set up a Git server on Kindle
 
 ```bash
 apt-get install -y git
-git clone https://github.com/someuser/somerepo.git
+
+# Create a bare repo
+mkdir -p /srv/git/myproject.git
+cd /srv/git/myproject.git
+git init --bare
+
+# From your PC (with SSH running on Kindle):
+git remote add kindle root@<kindle-ip>:/srv/git/myproject.git
+git push kindle main
 ```
 
-### Use as a network tool
+### Run a Telegram bot
 
 ```bash
-apt-get install -y nmap curl wget dnsutils
-nmap -sn 192.168.1.0/24
-curl ifconfig.me
+apt-get install -y python3 python3-pip
+pip3 install python-telegram-bot
+
+cat > bot.py << 'EOF'
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+
+async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f'Hello from Kindle! Uptime: {open("/proc/uptime").read().split()[0]}s')
+
+app = ApplicationBuilder().token("YOUR_BOT_TOKEN").build()
+app.add_handler(CommandHandler("hello", hello))
+app.run_polling()
+EOF
+
+python3 bot.py
+```
+
+### Use as a always-on IRC bouncer
+
+```bash
+apt-get install -y znc
+
+# First-time setup
+znc --makeconf
+# Follow the prompts, then connect from any IRC client
+```
+
+### Download torrents
+
+```bash
+apt-get install -y transmission-cli
+
+# Download a Linux ISO torrent
+transmission-cli "magnet:?xt=urn:btih:..." -w /mnt/us/downloads/
+```
+
+### Run Alpine instead of Debian (lighter)
+
+```bash
+# On your PC, build Alpine image:
+sudo ./build_rootfs.sh --distro alpine --size 256
+
+# Copy to Kindle. The KUAL extension auto-detects alpine.ext3
+# Alpine uses ~8MB base vs ~300MB for Debian
+# Package manager: apk add <package>
+```
+
+### Run Arch Linux ARM (btw I use arch)
+
+```bash
+# On your PC:
+sudo ./build_rootfs.sh --distro arch --size 2048
+
+# Copy arch.ext3 to Kindle
+# Package manager: pacman -Syu <package>
+```
+
+### Use any custom distro
+
+Got a rootfs tarball for armhf? Just point the script at it:
+
+```bash
+# From a URL (Void Linux example):
+sudo ./build_rootfs.sh --distro custom \
+    --rootfs-url https://repo-default.voidlinux.org/live/current/void-armv7l-ROOTFS-20230628.tar.xz \
+    --size 1024
+
+# From a local file:
+sudo ./build_rootfs.sh --distro custom \
+    --rootfs-file ~/Downloads/my-rootfs-armhf.tar.gz \
+    --size 512
+
+# The image will be named custom.ext3
+# Rename it to anything: mv custom.ext3 void.ext3
+# The KUAL extension auto-detects any .ext3 file in /mnt/us/
 ```
 
 ---
@@ -238,6 +414,35 @@ kindle-linux-chroot/
     ├── troubleshooting.md
     └── advanced.md
 ```
+
+---
+
+## Tested Hardware
+
+This project was developed and tested on the following device:
+
+| Spec | Value |
+|------|-------|
+| **Device** | Amazon Kindle 10th Generation (2019) |
+| **SoC** | NXP/Freescale i.MX7 (some units ship with i.MX6 SoloLite) |
+| **CPU** | Single-core ARM Cortex-A7/A9 @ 1 GHz, armv7l, no NEON |
+| **RAM** | 512 MB (~300 MB free after KindleOS) |
+| **Storage** | 8 GB eMMC (~6.2 GB user-accessible) |
+| **Display** | 6", 167 PPI, e-ink Carta, no frontlight on base model |
+| **Wi-Fi** | 2.4 GHz 802.11n |
+| **Bluetooth** | Yes, audio only |
+| **Kernel** | Linux 4.1.15 |
+| **Firmware** | 5.18.1 (jailbroken via WinterBreak/Mesquito) |
+
+### Should also work on:
+
+- Kindle Paperwhite 3 (PW3 / Voyage) — same SoC family
+- Kindle Paperwhite 4 (PW4, 2018) — i.MX 6SoloLite, 300 PPI
+- Kindle Paperwhite 5 (PW5, 2021) — i.MX 7, newer kernel
+- Kindle Basic 8th/10th gen — same architecture
+- Any jailbroken Kindle with `armhf` kernel and KUAL support
+
+> If you test on a different model, please open an issue or PR with your results!
 
 ---
 

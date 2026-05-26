@@ -7,14 +7,24 @@ set -e
 DISTRO="debian"
 SIZE_MB=1024
 OUTPUT_DIR="."
+ROOTFS_URL=""
+ROOTFS_FILE=""
 
 usage() {
     echo "Usage: sudo $0 [options]"
     echo "Options:"
-    echo "  --distro <debian|alpine>  (Default: debian)"
+    echo "  --distro <name>           debian, alpine, arch, or custom (Default: debian)"
     echo "  --size <MB>               Image size in Megabytes (Default: 1024)"
     echo "  --out <path>              Output directory (Default: current directory)"
+    echo "  --rootfs-url <url>        URL to armhf rootfs tarball (for --distro custom)"
+    echo "  --rootfs-file <path>      Local path to armhf rootfs tarball (for --distro custom)"
     echo "  -h, --help                Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  sudo $0 --distro debian --size 1024"
+    echo "  sudo $0 --distro arch --size 2048"
+    echo "  sudo $0 --distro custom --rootfs-url https://example.com/rootfs-armhf.tar.gz --size 1024"
+    echo "  sudo $0 --distro custom --rootfs-file /path/to/rootfs.tar.gz --size 512"
     exit 1
 }
 
@@ -24,6 +34,8 @@ while [[ "$#" -gt 0 ]]; do
         --distro) DISTRO="$2"; shift ;;
         --size) SIZE_MB="$2"; shift ;;
         --out) OUTPUT_DIR="$2"; shift ;;
+        --rootfs-url) ROOTFS_URL="$2"; shift ;;
+        --rootfs-file) ROOTFS_FILE="$2"; shift ;;
         -h|--help) usage ;;
         *) echo "Unknown parameter: $1"; usage ;;
     esac
@@ -226,8 +238,148 @@ alias quit='exit'
 echo "Kindle Alpine - type /help for commands"
 EOF
 
+elif [ "$DISTRO" = "arch" ]; then
+    echo "[*] Bootstrapping Arch Linux ARM (armv7)..."
+    TARBALL="/tmp/ArchLinuxARM-armv7-latest.tar.gz"
+    
+    if [ ! -f "$TARBALL" ]; then
+        echo "[*] Downloading Arch Linux ARM rootfs..."
+        wget -O "$TARBALL" http://os.archlinuxarm.org/os/ArchLinuxARM-armv7-latest.tar.gz || \
+        curl -L -o "$TARBALL" http://os.archlinuxarm.org/os/ArchLinuxARM-armv7-latest.tar.gz
+    fi
+    
+    echo "[*] Extracting rootfs (this may take a few minutes)..."
+    set +e
+    if command -v bsdtar >/dev/null 2>&1; then
+        bsdtar -xpf "$TARBALL" -C "$MNT_DIR"
+    else
+        tar -xpf "$TARBALL" -C "$MNT_DIR" --numeric-owner --warning=no-unknown-keyword
+    fi
+    set -e
+    
+    rm -f "$MNT_DIR/etc/resolv.conf"
+    echo "nameserver 8.8.8.8" > "$MNT_DIR/etc/resolv.conf"
+    echo "kindle" > "$MNT_DIR/etc/hostname"
+
+    echo "[*] Setting root password to 'kindle'..."
+    cp "$(which qemu-arm-static)" "$MNT_DIR/usr/bin/"
+    chroot "$MNT_DIR" bash -c 'echo "root:kindle" | chpasswd'
+
+    echo "[*] Installing custom chroot bash profile..."
+    cat > "$MNT_DIR/etc/profile.d/kindle.sh" << 'EOF'
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PS1='\[\033[1;34m\]root@kindle:\w# \[\033[0m\]'
+
+alias /exit='echo "Bye!"; exit'
+alias quit='exit'
+
+/landscape() {
+    echo 1 > /sys/class/graphics/fb0/rotate 2>/dev/null || echo "Rotation failed"
+}
+/portrait() {
+    echo 0 > /sys/class/graphics/fb0/rotate 2>/dev/null || echo "Rotation failed"
+}
+/rotate() {
+    CUR=$(cat /sys/class/graphics/fb0/rotate 2>/dev/null)
+    if [ "$CUR" = "0" ] || [ "$CUR" = "2" ]; then /landscape; else /portrait; fi
+}
+/help() {
+    echo "=== Kindle Arch Commands ==="
+    echo "  exit        - exit chroot"
+    echo "  /landscape  - rotate landscape"
+    echo "  /portrait   - rotate portrait"
+    echo "  /rotate     - toggle rotation"
+    echo "  /info       - system info"
+    echo "  /wifi       - show WiFi IP"
+    echo "  /ssh        - start SSH server"
+    echo "  /help       - this help"
+    echo "============================="
+}
+/info() {
+    echo "=== Kindle Arch ==="
+    echo "Kernel: $(uname -r)"
+    echo "Memory: $(free -m | awk '/Mem:/ {printf "%dMB / %dMB", $3, $2}')"
+    echo "Disk:   $(df -h / | awk 'NR==2 {printf "%s / %s (%s)", $3, $2, $5}')"
+    echo "==================="
+}
+/wifi() {
+    IP=$(ip addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
+    [ -n "$IP" ] && echo "WiFi IP: $IP" || echo "No WiFi connection"
+}
+/ssh() {
+    if command -v dropbear >/dev/null 2>&1; then
+        killall dropbear 2>/dev/null
+        dropbear -R -p 0.0.0.0:2222 -B 2>/dev/null
+        echo "SSH running on port 2222"
+        /wifi
+    else
+        echo "Installing dropbear..."
+        pacman -Sy --noconfirm dropbear
+        /ssh
+    fi
+}
+echo "Kindle Arch - type /help for commands"
+EOF
+
+elif [ "$DISTRO" = "custom" ]; then
+    echo "[*] Building custom rootfs image..."
+    
+    if [ -n "$ROOTFS_FILE" ]; then
+        TARBALL="$ROOTFS_FILE"
+        if [ ! -f "$TARBALL" ]; then
+            echo "Error: File not found: $TARBALL"
+            exit 1
+        fi
+    elif [ -n "$ROOTFS_URL" ]; then
+        TARBALL="/tmp/custom-rootfs.tar.gz"
+        if [ ! -f "$TARBALL" ]; then
+            echo "[*] Downloading rootfs from $ROOTFS_URL..."
+            wget -O "$TARBALL" "$ROOTFS_URL" || curl -L -o "$TARBALL" "$ROOTFS_URL"
+        fi
+    else
+        echo "Error: --distro custom requires --rootfs-url or --rootfs-file"
+        echo "  Example: sudo $0 --distro custom --rootfs-url https://example.com/rootfs-armhf.tar.xz --size 1024"
+        exit 1
+    fi
+    
+    echo "[*] Extracting rootfs..."
+    set +e
+    case "$TARBALL" in
+        *.tar.xz) tar -xJpf "$TARBALL" -C "$MNT_DIR" --numeric-owner 2>/dev/null ;;
+        *.tar.gz|*.tgz) 
+            if command -v bsdtar >/dev/null 2>&1; then
+                bsdtar -xpf "$TARBALL" -C "$MNT_DIR"
+            else
+                tar -xzpf "$TARBALL" -C "$MNT_DIR" --numeric-owner 2>/dev/null
+            fi ;;
+        *.tar.bz2) tar -xjpf "$TARBALL" -C "$MNT_DIR" --numeric-owner 2>/dev/null ;;
+        *) tar -xpf "$TARBALL" -C "$MNT_DIR" --numeric-owner 2>/dev/null ;;
+    esac
+    set -e
+    
+    rm -f "$MNT_DIR/etc/resolv.conf" 2>/dev/null
+    echo "nameserver 8.8.8.8" > "$MNT_DIR/etc/resolv.conf"
+    echo "kindle" > "$MNT_DIR/etc/hostname"
+    
+    if [ -f "$MNT_DIR/bin/bash" ] || [ -f "$MNT_DIR/usr/bin/bash" ]; then
+        cp "$(which qemu-arm-static)" "$MNT_DIR/usr/bin/" 2>/dev/null
+        chroot "$MNT_DIR" bash -c 'echo "root:kindle" | chpasswd' 2>/dev/null || true
+    fi
+
+    echo "[*] Installing custom chroot profile..."
+    mkdir -p "$MNT_DIR/etc/profile.d"
+    cat > "$MNT_DIR/etc/profile.d/kindle.sh" << 'EOF'
+export LANG=C.UTF-8
+export PS1='\[\033[1;35m\]root@kindle:\w# \[\033[0m\]'
+alias quit='exit'
+echo "Kindle Custom Linux - enjoy!"
+EOF
+
 else
-    echo "Error: Unsupported distribution '$DISTRO'"
+    echo "Error: Unsupported distribution '$DISTRO'."
+    echo "Supported: debian, alpine, arch, custom"
+    echo "For any other distro, use: --distro custom --rootfs-url <URL>"
     exit 1
 fi
 

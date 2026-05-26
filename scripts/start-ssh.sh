@@ -1,7 +1,4 @@
 #!/bin/sh
-# Start SSH server inside Linux chroot on Kindle
-# Usage: sh /mnt/us/start-ssh.sh [debian|alpine]
-# Run from kterm or via KUAL
 
 DISTRO="${1:-debian}"
 IMG="/mnt/us/${DISTRO}.ext3"
