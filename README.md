@@ -51,12 +51,32 @@ A set of scripts and a KUAL extension that let you run **any** ARM Linux distrib
 | Debian Bookworm | Fully tested | `apt` | `--distro debian` |
 | Alpine 3.19 | Tested | `apk` | `--distro alpine` |
 | Arch Linux ARM | Fully tested | `pacman` | `--distro arch` |
-| Ubuntu 22.04 | Should work | `apt` | `--distro custom --rootfs-url <url>` |
-| Void Linux | Should work | `xbps` | `--distro custom --rootfs-url <url>` |
-| postmarketOS | Should work | `apk` | `--distro custom --rootfs-file <path>` |
-| Any armhf distro | Use custom | varies | `--distro custom --rootfs-url <url>` |
+| Void Linux | Should work | `xbps` | `--distro custom` |
 
-> Any distro that provides an `armhf` (ARMv7 hard-float) rootfs tarball can be used with the `--distro custom` flag.
+<details>
+<summary><b>All confirmed armv7 distros (from DistroWatch)</b></summary>
+
+These active distros have armv7 builds and should work in chroot:
+
+| Distro | Type | Notes |
+|--------|------|-------|
+| **Void Linux** | Rolling | runit init, `xbps`, very lightweight |
+| **Alpine Linux** | Rolling | musl libc, `apk`, ~5MB base |
+| **postmarketOS** | Rolling | Alpine-based, mobile-focused |
+| **Adélie Linux** | Stable | musl libc, `apk`, desktop-oriented |
+| **AOSC OS** | Rolling | dpkg-based, armv7l optimized |
+| **Mageia** | Stable | rpm-based, Mandriva fork |
+| **SUSE Linux Enterprise** | LTS | enterprise, rpm |
+| **Exherbo** | Source-based | source-only, for devs |
+| **LibreELEC** | Stable | Kodi-only, not general purpose |
+| **OSMC** | Stable | Debian-based, media center |
+| **Bedrock Linux** | Meta | mixes packages from other distros |
+
+> Best picks for Kindle: **Void** (fast, small), **Alpine** (tiny), **Debian** (most packages)
+
+</details>
+
+> **Any Linux distro with a 32-bit ARM rootfs works** (armv7/armhf, armv6, armv5 - all compatible). The Kindle kernel is armv7l so any 32-bit ARM binary runs. Only **aarch64 (arm64) will NOT work** - the kernel is 32-bit only.
 
 ---
 

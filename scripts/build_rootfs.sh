@@ -76,12 +76,14 @@ interactive_menu() {
             read ROOTFS_FILE < /dev/tty
         else
             echo ""
-            echo "  Where to get a direct link:"
-            echo "    Void:   https://repo-default.voidlinux.org/live/current/"
-            echo "            look for void-armv7l-ROOTFS-*.tar.xz"
-            echo "    Ubuntu: https://cdimage.ubuntu.com/ubuntu-base/releases/"
-            echo "            look for *-base-armhf.tar.gz"
-            echo "    pmOS:   https://images.postmarketos.org/bpo/"
+            echo "  Where to get a direct link (armv7 rootfs):"
+            echo "    Void:    https://repo-default.voidlinux.org/live/current/"
+            echo "             look for void-armv7l-ROOTFS-*.tar.xz"
+            echo "    Ubuntu:  https://cdimage.ubuntu.com/ubuntu-base/releases/"
+            echo "             look for *-base-armhf.tar.gz"
+            echo "    pmOS:    https://images.postmarketos.org/bpo/"
+            echo "    Adelie:  https://distfiles.adelielinux.org/adelie/1.0/"
+            echo "    AOSC:    https://releases.aosc.io/"
             echo ""
             printf "  URL to tarball: "
             read ROOTFS_URL < /dev/tty
