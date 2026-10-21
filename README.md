@@ -512,7 +512,7 @@ PRs welcome! Ideas for contribution:
 
 - [KUAL](https://www.mobileread.com/forums/showthread.php?t=203326) by knc1
 - [kterm](https://github.com/bfabiszewski/kterm) by bfabiszewski
-- Kindle jailbreak community at [MobileRead](https://www.mobileread.com/forums/forumdisplay.php?f=150)
+- Kindle jailbreak community at [MobileRead](https://www.mobileread.com/forums/forumdisplay.php?f=150) & [Dammit Jeff](https://discord.gg/zqkPvPzMgy)
 
 ## License
 
