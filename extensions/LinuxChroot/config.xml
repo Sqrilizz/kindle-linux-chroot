@@ -7,6 +7,6 @@
         <id>LinuxChroot</id>
     </information>
     <menus>
-        <menu type="json" dynamic="true">menu.json</menu>
+        <menu type="json" dynamic="true">bin/generate_menu.sh</menu>
     </menus>
 </extension>

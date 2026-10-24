@@ -51,7 +51,7 @@ A set of scripts and a KUAL extension that let you run **any** ARM Linux distrib
 | Debian Trixie | Fully tested | `apt` | `--distro debian` |
 | Alpine 3.22 | Tested | `apk` | `--distro alpine` |
 | Arch Linux ARM | Fully tested | `pacman` | `--distro arch` |
-| Void Linux | Should work | `xbps` | `--distro custom` |
+| Void Linux | Supported (report results) | `xbps` | `--distro void` |
 
 <details>
 <summary><b>All confirmed armv7 distros (from DistroWatch)</b></summary>
@@ -85,7 +85,7 @@ These active distros have armv7 builds and should work in chroot:
 - A **jailbroken** Kindle (tested on Kindle 10th gen / PW4, should work on PW3+)
 - [KUAL](https://www.mobileread.com/forums/showthread.php?t=203326) installed
 - [kterm](https://github.com/bfabiszewski/kterm) installed
-- A Linux PC (or macOS with Docker) for building the image
+- A Linux PC (or any host with Docker, including macOS — see [Docker builder](#step-1-build-the-rootfs-image)) for building the image
 - Wi-Fi connection on Kindle (for SSH and package downloads)
 
 ---
@@ -378,9 +378,9 @@ sudo ./build_rootfs.sh --distro arch --size 2048
 Got a rootfs tarball for armhf? Just point the script at it:
 
 ```bash
-# From a URL (Void Linux example):
+# From a URL (Ubuntu Base example — Debian/Alpine/Arch/Void have first-class support):
 sudo ./build_rootfs.sh --distro custom \
-    --rootfs-url https://repo-default.voidlinux.org/live/current/void-armv7l-ROOTFS-20230628.tar.xz \
+    --rootfs-url https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.2-base-armhf.tar.gz \
     --size 1024
 
 # From a local file:
@@ -426,21 +426,27 @@ The key insight: Kindle already runs Linux (kernel 4.1.15). We don't replace any
 
 ```
 kindle-linux-chroot/
+├── Dockerfile                  # Docker builder container
 ├── README.md
 ├── scripts/
-│   ├── build_rootfs.sh       # Universal rootfs builder
-│   └── start-ssh.sh          # SSH server launcher for Kindle
+│   ├── build_rootfs.sh         # Universal rootfs builder (Debian/Alpine/Arch/Void/custom)
+│   ├── resize_ext3.sh          # Grow or shrink .ext3 images
+│   ├── build_docker.sh         # Run the builder via Docker (macOS/Windows)
+│   ├── docker_entrypoint.sh    # Container entrypoint (binfmt setup)
+│   └── start-ssh.sh            # SSH server launcher for Kindle
 ├── extensions/
-│   └── LinuxChroot/          # KUAL extension
+│   └── LinuxChroot/            # KUAL extension
 │       ├── config.xml
-│       ├── menu.json
+│       ├── menu.json           # Static fallback menu
 │       └── bin/
-│           ├── shell.sh      # Mount + launch kterm
-│           └── stop.sh       # Unmount chroot
+│           ├── shell.sh        # Mount + launch kterm
+│           ├── generate_menu.sh  # Dynamic KUAL menu with mount status
+│           └── stop.sh         # Unmount chroot
 └── docs/
     ├── screenshot.jpg
-    ├── troubleshooting.md
-    └── advanced.md
+    ├── docker-build.md         # Docker builder guide
+    ├── EXAMPLES.md
+    └── TROUBLESHOOTING.md
 ```
 
 ---
@@ -501,10 +507,10 @@ This project was developed and tested on the following device:
 ## Contributing
 
 PRs welcome! Ideas for contribution:
-- Add more distro support (Void, Gentoo, postmarketOS)
-- Improve KUAL menu with status indicators
-- Add a script to resize ext3 images
-- Write a Docker-based builder for macOS users
+- ~~Add more distro support (Void)~~ — done, `--distro void` (Gentoo and postmarketOS still welcome)
+- ~~Add a script to resize ext3 images~~ — done, `scripts/resize_ext3.sh`
+- ~~Write a Docker-based builder for macOS users~~ — done, `scripts/build_docker.sh` + `docs/docker-build.md`
+- Improve KUAL menu with status indicators — partially done (`generate_menu.sh` shows mounted images; "Stop first" UX needs on-device feedback)
 
 ---
 

@@ -2,7 +2,7 @@
 
 KTERM=/mnt/us/extensions/kterm
 
-# Prints the Nth .ext3 file found in /mnt/us/ (portable, tolerates spaces)
+# Print the Nth .ext3 file found in /mnt/us/ (portable, tolerates spaces)
 pick_image() {
     N=0
     for f in /mnt/us/*.ext3; do
@@ -21,7 +21,10 @@ for f in /mnt/us/*.ext3; do
     COUNT=$((COUNT + 1))
 done
 
-if [ "$COUNT" -eq 0 ]; then
+# Optional argument from the KUAL menu: the exact image path
+if [ -n "$1" ] && [ -f "$1" ] && case "$1" in *.ext3) true ;; *) false ;; esac; then
+    IMG="$1"
+elif [ "$COUNT" -eq 0 ]; then
     echo "No rootfs image found! Place <distro>.ext3 in /mnt/us/"
     exit 1
 elif [ "$COUNT" -eq 1 ]; then

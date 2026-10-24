@@ -12,7 +12,7 @@ ALPINE_RELEASE="v3.22"
 usage() {
     echo "Usage: sudo $0 [options]"
     echo "Options:"
-    echo "  --distro <name>           debian, alpine, arch, or custom (Default: debian)"
+    echo "  --distro <name>           debian, alpine, arch, void, or custom (Default: debian)"
     echo "  --size <MB>               Image size in Megabytes (Default: 1024)"
     echo "  --out <path>              Output directory (Default: current directory)"
     echo "  --rootfs-url <url>        URL to armhf rootfs tarball (for --distro custom)"
@@ -36,8 +36,9 @@ interactive_menu() {
     echo "    1) Debian       (recommended, ~500MB)"
     echo "    2) Alpine       (lightweight, ~50MB)"
     echo "    3) Arch Linux   (rolling release, ~1.5GB)"
-    echo "    4) Custom       (provide your own rootfs)"
-    echo ""
+    echo "    4) Void Linux   (fast, runit, ~250MB)"
+    echo "    5) Custom       (provide your own rootfs)"
+
     printf "  Choice [1]: "
     read DISTRO_CHOICE < /dev/tty
     [ -z "$DISTRO_CHOICE" ] && DISTRO_CHOICE=1
@@ -46,7 +47,8 @@ interactive_menu() {
         1) DISTRO="debian" ;;
         2) DISTRO="alpine" ;;
         3) DISTRO="arch" ;;
-        4) DISTRO="custom" ;;
+        4) DISTRO="void" ;;
+        5) DISTRO="custom" ;;
         *) echo "  Invalid choice"; exit 1 ;;
     esac
 
@@ -366,6 +368,42 @@ elif [ "$DISTRO" = "arch" ]; then
     echo "[*] Installing chroot profile..."
     install_kindle_profile "1;34" "kindle" "pacman -Sy --noconfirm dropbear" "Arch"
 
+elif [ "$DISTRO" = "void" ]; then
+    echo "[*] Bootstrapping Void Linux (armv7l)..."
+    VOID_DIR="http://repo-default.voidlinux.org/live/current/"
+    VOID_PKG=$(curl -sSL "$VOID_DIR" | grep -o 'void-armv7l-ROOTFS-[0-9]*\.tar\.xz' | sort -u | tail -n1)
+    if [ -z "$VOID_PKG" ]; then
+        echo "Error: could not find void-armv7l-ROOTFS tarball."
+        echo "       Check the listing: $VOID_DIR"
+        exit 1
+    fi
+    TARBALL="/tmp/${VOID_PKG}"
+    if [ ! -f "$TARBALL" ]; then
+        fetch "$VOID_DIR/$VOID_PKG" "$TARBALL"
+    fi
+    echo "[*] Found: $VOID_PKG"
+
+    echo "[*] Extracting rootfs (this may take a few minutes)..."
+    set +e
+    tar -xpf "$TARBALL" -C "$MNT_DIR" --numeric-owner 2>/dev/null
+    set -e
+    if [ ! -d "$MNT_DIR/etc" ]; then
+        echo "Error: extraction failed, rootfs looks empty."
+        exit 1
+    fi
+
+    rm -f "$MNT_DIR/etc/resolv.conf" 2>/dev/null
+    echo "nameserver 8.8.8.8" > "$MNT_DIR/etc/resolv.conf"
+    echo "kindle" > "$MNT_DIR/etc/hostname"
+
+    echo "[*] Setting root password to 'kindle'..."
+    cp "$(which qemu-arm-static)" "$MNT_DIR/usr/bin/" 2>/dev/null
+    chroot "$MNT_DIR" bash -c 'echo "root:kindle" | chpasswd' 2>/dev/null || \
+    chroot "$MNT_DIR" chpasswd <<< "root:kindle"
+
+    echo "[*] Installing chroot profile..."
+    install_kindle_profile "1;33" "void" "xbps-install -S dropbear" "Void"
+
 elif [ "$DISTRO" = "custom" ]; then
     echo "[*] Building custom rootfs image..."
     
@@ -415,7 +453,7 @@ elif [ "$DISTRO" = "custom" ]; then
 
 else
     echo "Error: Unsupported distribution '$DISTRO'."
-    echo "Supported: debian, alpine, arch, custom"
+    echo "Supported: debian, alpine, arch, void, custom"
     echo "For any other distro, use: --distro custom --rootfs-url <URL>"
     exit 1
 fi
