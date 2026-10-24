@@ -87,8 +87,9 @@ jobs:
 
       - name: Prepare test image
         run: |
-          truncate -s 64M /tmp/test.ext3
-          mkfs.ext3 -F /tmp/test.ext3
+          # root-owned: the resize script itself runs under sudo
+          sudo truncate -s 64M /tmp/test.ext3
+          sudo mkfs.ext3 -F /tmp/test.ext3
 
       - name: Grow 64MB -> 128MB
         run: |

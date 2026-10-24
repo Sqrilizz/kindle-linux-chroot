@@ -138,12 +138,22 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "[*] Checking host dependencies..."
-for cmd in truncate mkfs.ext3 qemu-arm-static; do
+for cmd in truncate mkfs.ext3; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "Error: Required host dependency '$cmd' is missing. Please install it."
         exit 1
     fi
 done
+
+# qemu-arm-static is only required by distros whose second stage runs
+# armhf binaries in a chroot. Alpine does everything natively via apk.static.
+if [ "$DISTRO" != "alpine" ]; then
+    if ! command -v qemu-arm-static >/dev/null 2>&1; then
+        echo "Error: Required host dependency 'qemu-arm-static' is missing. Please install it."
+        echo "       (qemu-arm-static is not needed for --distro alpine)"
+        exit 1
+    fi
+fi
 
 IMG_NAME="${DISTRO}.ext3"
 IMG_PATH="${OUTPUT_DIR}/${IMG_NAME}"
