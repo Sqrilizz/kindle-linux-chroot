@@ -319,17 +319,24 @@ elif [ "$DISTRO" = "alpine" ]; then
     APK_DIR="/tmp/apk-tools-static"
     rm -rf "$APK_DIR"
     mkdir -p "$APK_DIR"
-    BASE_URL="http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main/armhf"
+    # The host must run apk.static natively, so take it from a repository
+    # matching the host architecture. The rootfs itself is still armhf
+    # via the --arch flag below (standard cross-bootstrap technique).
+    case "$(uname -m)" in
+        aarch64|arm64) HOST_ARCH="aarch64" ;;
+        *) HOST_ARCH="x86_64" ;;
+    esac
+    BASE_URL="http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main/${HOST_ARCH}"
     echo "[*] Downloading apk-tools-static from $BASE_URL..."
     APK_PKG=$(curl -sSL "$BASE_URL/" | grep -o 'apk-tools-static-[0-9][^"]*\.apk' | sort -u | tail -n1)
     if [ -z "$APK_PKG" ]; then
-        echo "Error: could not find apk-tools-static package for alpine $ALPINE_RELEASE armhf."
+        echo "Error: could not find apk-tools-static package for alpine $ALPINE_RELEASE $HOST_ARCH."
         echo "       Check the release version with: curl $BASE_URL/"
         exit 1
     fi
     echo "[*] Found: $APK_PKG"
     curl -sSL -o "$APK_DIR/apk-tools-static.apk" "$BASE_URL/$APK_PKG"
-    tar -xzf "$APK_DIR/apk-tools-static.apk" -C "$APK_DIR"
+    tar --warning=no-unknown-keyword -xzf "$APK_DIR/apk-tools-static.apk" -C "$APK_DIR"
     APK_STATIC="$APK_DIR/sbin/apk.static"
     chmod +x "$APK_STATIC"
     
