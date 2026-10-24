@@ -48,8 +48,8 @@ A set of scripts and a KUAL extension that let you run **any** ARM Linux distrib
 
 | Distro | Status | Package Manager | Build flag |
 |--------|--------|----------------|-----------|
-| Debian Bookworm | Fully tested | `apt` | `--distro debian` |
-| Alpine 3.19 | Tested | `apk` | `--distro alpine` |
+| Debian Trixie | Fully tested | `apt` | `--distro debian` |
+| Alpine 3.22 | Tested | `apk` | `--distro alpine` |
 | Arch Linux ARM | Fully tested | `pacman` | `--distro arch` |
 | Void Linux | Should work | `xbps` | `--distro custom` |
 

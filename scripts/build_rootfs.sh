@@ -6,6 +6,8 @@ SIZE_MB=""
 OUTPUT_DIR="."
 ROOTFS_URL=""
 ROOTFS_FILE=""
+DEBIAN_RELEASE="trixie"
+ALPINE_RELEASE="v3.22"
 
 usage() {
     echo "Usage: sudo $0 [options]"
@@ -15,6 +17,8 @@ usage() {
     echo "  --out <path>              Output directory (Default: current directory)"
     echo "  --rootfs-url <url>        URL to armhf rootfs tarball (for --distro custom)"
     echo "  --rootfs-file <path>      Local path to armhf rootfs tarball (for --distro custom)"
+    echo "  --debian-release <name>   Debian release to bootstrap (Default: trixie)"
+    echo "  --alpine-release <ver>    Alpine version, e.g. v3.22 (Default: v3.22)"
     echo "  -h, --help                Show this help"
     echo ""
     echo "Run without arguments for interactive mode."
@@ -112,6 +116,8 @@ while [[ "$#" -gt 0 ]]; do
         --out) OUTPUT_DIR="$2"; shift ;;
         --rootfs-url) ROOTFS_URL="$2"; shift ;;
         --rootfs-file) ROOTFS_FILE="$2"; shift ;;
+        --debian-release) DEBIAN_RELEASE="$2"; shift ;;
+        --alpine-release) ALPINE_RELEASE="$2"; shift ;;
         -h|--help) usage ;;
         *) echo "Unknown parameter: $1"; usage ;;
     esac
@@ -130,7 +136,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "[*] Checking host dependencies..."
-for cmd in dd mkfs.ext3 qemu-arm-static; do
+for cmd in truncate mkfs.ext3 qemu-arm-static; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "Error: Required host dependency '$cmd' is missing. Please install it."
         exit 1
@@ -149,7 +155,7 @@ echo " Destination:  $IMG_PATH"
 echo "=============================================="
 
 echo "[*] Allocating sparse image..."
-dd if=/dev/zero of="$IMG_PATH" bs=1M count="$SIZE_MB"
+truncate -s "${SIZE_MB}M" "$IMG_PATH"
 echo "[*] Formatting as ext3..."
 mkfs.ext3 -F "$IMG_PATH"
 
@@ -169,8 +175,8 @@ if [ "$DISTRO" = "debian" ]; then
         echo "Error: 'debootstrap' is required for Debian. Install it first."
         exit 1
     fi
-    echo "[*] Bootstrapping Debian Bookworm Stage 1 (armhf)..."
-    debootstrap --arch=armhf --foreign bookworm "$MNT_DIR" http://deb.debian.org/debian
+    echo "[*] Bootstrapping Debian $DEBIAN_RELEASE Stage 1 (armhf)..."
+    debootstrap --arch=armhf --foreign "$DEBIAN_RELEASE" "$MNT_DIR" http://deb.debian.org/debian
     
     echo "[*] Copying qemu-arm-static..."
     cp "$(which qemu-arm-static)" "$MNT_DIR/usr/bin/"
@@ -181,9 +187,9 @@ if [ "$DISTRO" = "debian" ]; then
     echo "nameserver 8.8.8.8" > "$MNT_DIR/etc/resolv.conf"
     echo "kindle" > "$MNT_DIR/etc/hostname"
     cat > "$MNT_DIR/etc/apt/sources.list" << EOF
-deb http://deb.debian.org/debian bookworm main
-deb http://deb.debian.org/debian bookworm-updates main
-deb http://security.debian.org/debian-security bookworm-security main
+deb http://deb.debian.org/debian $DEBIAN_RELEASE main
+deb http://deb.debian.org/debian $DEBIAN_RELEASE-updates main
+deb http://security.debian.org/debian-security $DEBIAN_RELEASE-security main
 EOF
     
     echo "[*] Setting root password to 'kindle'..."
@@ -266,16 +272,25 @@ echo ""
 EOF
 
 elif [ "$DISTRO" = "alpine" ]; then
-    echo "[*] Bootstrapping Alpine Linux (armhf)..."
-    APK_STATIC="/tmp/apk-tools-static"
-    if [ ! -f "$APK_STATIC" ]; then
-        echo "[*] Downloading apk.static..."
-        curl -sSL -o "$APK_STATIC" https://gitlab.alpinelinux.org/alpine/apk-tools/-/raw/master/src/apk.static?inline=false || \
-        wget -q -O "$APK_STATIC" https://gitlab.alpinelinux.org/alpine/apk-tools/-/raw/master/src/apk.static?inline=false
-        chmod +x "$APK_STATIC"
+    echo "[*] Bootstrapping Alpine Linux $ALPINE_RELEASE (armhf)..."
+    APK_DIR="/tmp/apk-tools-static"
+    rm -rf "$APK_DIR"
+    mkdir -p "$APK_DIR"
+    BASE_URL="http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main/armhf"
+    echo "[*] Downloading apk-tools-static from $BASE_URL..."
+    APK_PKG=$(curl -sSL "$BASE_URL/" | grep -o 'apk-tools-static-[0-9][^"]*\.apk' | sort -u | tail -n1)
+    if [ -z "$APK_PKG" ]; then
+        echo "Error: could not find apk-tools-static package for alpine $ALPINE_RELEASE armhf."
+        echo "       Check the release version with: curl $BASE_URL/"
+        exit 1
     fi
+    echo "[*] Found: $APK_PKG"
+    curl -sSL -o "$APK_DIR/apk-tools-static.apk" "$BASE_URL/$APK_PKG"
+    tar -xzf "$APK_DIR/apk-tools-static.apk" -C "$APK_DIR"
+    APK_STATIC="$APK_DIR/sbin/apk.static"
+    chmod +x "$APK_STATIC"
     
-    "$APK_STATIC" --repository http://dl-cdn.alpinelinux.org/alpine/v3.19/main \
+    "$APK_STATIC" --repository http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main \
                   --update-cache \
                   --allow-untrusted \
                   --arch armhf \
@@ -284,8 +299,8 @@ elif [ "$DISTRO" = "alpine" ]; then
                   alpine-base alpine-keys apk-tools-static
                   
     echo "nameserver 8.8.8.8" > "$MNT_DIR/etc/resolv.conf"
-    echo "http://dl-cdn.alpinelinux.org/alpine/v3.19/main" > "$MNT_DIR/etc/apk/repositories"
-    echo "http://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> "$MNT_DIR/etc/apk/repositories"
+    echo "http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main" > "$MNT_DIR/etc/apk/repositories"
+    echo "http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/community" >> "$MNT_DIR/etc/apk/repositories"
     
     echo "root:kindle" | chroot "$MNT_DIR" chpasswd
     
@@ -313,8 +328,34 @@ alias quit='exit'
     echo "  /landscape  - rotate landscape"
     echo "  /portrait   - rotate portrait"
     echo "  /rotate     - toggle rotation"
+    echo "  /info       - system info"
+    echo "  /wifi       - show WiFi IP"
+    echo "  /ssh        - start SSH server"
     echo "  /help       - this help"
     echo "=============================="
+}
+/info() {
+    echo "=== Kindle Alpine ==="
+    echo "Kernel: $(uname -r)"
+    echo "Memory: $(free -m | awk '/Mem:/ {printf "%dMB / %dMB", $3, $2}')"
+    echo "Disk:   $(df -h / | awk 'NR==2 {printf "%s / %s (%s)", $3, $2, $5}')"
+    echo "====================="
+}
+/wifi() {
+    IP=$(ip addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
+    [ -n "$IP" ] && echo "WiFi IP: $IP" || echo "No WiFi connection"
+}
+/ssh() {
+    if command -v dropbear >/dev/null 2>&1; then
+        killall dropbear 2>/dev/null
+        dropbear -R -p 0.0.0.0:2222 -B 2>/dev/null
+        echo "SSH running on port 2222"
+        /wifi
+    else
+        echo "Installing dropbear..."
+        apk update -q && apk add dropbear
+        /ssh
+    fi
 }
 cat << 'BANNER'
 
