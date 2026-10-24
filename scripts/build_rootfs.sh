@@ -147,12 +147,116 @@ IMG_NAME="${DISTRO}.ext3"
 IMG_PATH="${OUTPUT_DIR}/${IMG_NAME}"
 MNT_DIR="/tmp/kindle-chroot-build"
 
+fetch() {
+    local url="$1" out="$2"
+    rm -f "$out"
+    echo "[*] Downloading: $url"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fSL -o "$out" "$url"
+    else
+        wget -O "$out" "$url"
+    fi
+}
+
+# Install the shared Kindle chroot profile into a rootfs.
+# $1 = ANSI color code for PS1 (e.g. "1", "1;32")
+# $2 = hostname shown in the prompt
+# $3 = command used to install dropbear on this distro
+# $4 = distro display name (used in /info output)
+install_kindle_profile() {
+    local color="$1" host="$2" pkg_install="$3" distro_name="$4"
+    mkdir -p "$MNT_DIR/etc/profile.d"
+    local ps1="\\[\\033[${color}m\\]root@${host}:\\w# \\[\\033[0m\\]"
+    {
+        printf 'export LANG=C.UTF-8\nexport LC_ALL=C.UTF-8\n'
+        printf "export PS1='%s'\n" "$ps1"
+        echo ''
+        cat << 'EOF'
+alias /exit='echo "Bye!"; exit'
+alias quit='exit'
+
+/landscape() {
+    echo 1 > /sys/class/graphics/fb0/rotate 2>/dev/null || xrandr -o right 2>/dev/null || echo "Rotation failed"
+}
+
+/portrait() {
+    echo 0 > /sys/class/graphics/fb0/rotate 2>/dev/null || xrandr -o normal 2>/dev/null || echo "Rotation failed"
+}
+
+/rotate() {
+    CUR=$(cat /sys/class/graphics/fb0/rotate 2>/dev/null)
+    if [ "$CUR" = "0" ] || [ "$CUR" = "2" ]; then /landscape; else /portrait; fi
+}
+
+/help() {
+    echo "=== Kindle Commands ==="
+    echo "  /exit, quit - exit chroot"
+    echo "  /landscape  - rotate to landscape"
+    echo "  /portrait   - rotate to portrait"
+    echo "  /rotate     - toggle rotation"
+    echo "  /info       - system info"
+    echo "  /wifi       - show WiFi IP"
+    echo "  /ssh        - start SSH server"
+    echo "  /help       - this help"
+    echo "======================="
+}
+
+/info() {
+    echo "=== Kindle __DISTRO_NAME__ ==="
+    echo "Kernel: $(uname -r)"
+    echo "Memory: $(free -m | awk '/Mem:/ {printf "%dMB / %dMB", $3, $2}')"
+    echo "Disk:   $(df -h / | awk 'NR==2 {printf "%s / %s (%s)", $3, $2, $5}')"
+    echo "====================="
+}
+
+/wifi() {
+    IP=$(ip addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
+    [ -n "$IP" ] && echo "WiFi IP: $IP" || echo "No WiFi connection"
+}
+
+/ssh() {
+    if command -v dropbear >/dev/null 2>&1; then
+        killall dropbear 2>/dev/null
+        dropbear -R -p 0.0.0.0:2222 -B 2>/dev/null
+        echo "SSH running on port 2222"
+        /wifi
+    else
+        echo "Installing dropbear..."
+        __PKG_INSTALL__
+        /ssh
+    fi
+}
+
+echo "Connected. Type /help for available commands."
+EOF
+    } > "$MNT_DIR/etc/profile.d/kindle.sh"
+    local esc_pkg esc_name
+    esc_pkg=$(printf '%s' "$pkg_install" | sed 's/[\\&|]/\\&/g')
+    esc_name=$(printf '%s' "$distro_name" | sed 's/[\\&|]/\\&/g')
+    sed -i "s|__PKG_INSTALL__|$esc_pkg|" "$MNT_DIR/etc/profile.d/kindle.sh"
+    sed -i "s|__DISTRO_NAME__|$esc_name|" "$MNT_DIR/etc/profile.d/kindle.sh"
+}
+
 echo "=============================================="
 echo " Building Kindle Linux Chroot Image"
 echo " Distribution: $DISTRO"
 echo " Size:         $SIZE_MB MB"
 echo " Destination:  $IMG_PATH"
 echo "=============================================="
+echo ""
+
+cat << 'BANNER'
+
+▗▖ ▄▖  █          ▗▖▗▄▖              ▄▄ ▗▖
+▐▌▐▛   ▀          ▐▌▝▜▌             █▀▀▌▐▌                   ▐▌
+▐▙█   ██  ▐▙██▖ ▟█▟▌ ▐▌   ▟█▙      ▐▛   ▐▙██▖ █▟█▌ ▟█▙  ▟█▙ ▐███
+▐██    █  ▐▛ ▐▌▐▛ ▜▌ ▐▌  ▐▙▄▟▌     ▐▌   ▐▛ ▐▌ █▘  ▐▛ ▜▌▐▛ ▜▌ ▐▌
+▐▌▐▙   █  ▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▛▀▀▘     ▐▙   ▐▌ ▐▌ █   ▐▌ ▐▌▐▌ ▐▌ ▐▌
+▐▌ █▖▗▄█▄▖▐▌ ▐▌▝█▄█▌ ▐▙▄ ▝█▄▄▌      █▄▄▌▐▌ ▐▌ █   ▝█▄█▘▝█▄█▘ ▐▙▄
+▝▘ ▝▘▝▀▀▀▘▝▘ ▝▘ ▝▀▝▘  ▀▀  ▝▀▀        ▀▀ ▝▘ ▝▘ ▀    ▝▀▘  ▝▀▘   ▀▀
+
+BANNER
+echo ""
 
 echo "[*] Allocating sparse image..."
 truncate -s "${SIZE_MB}M" "$IMG_PATH"
@@ -195,81 +299,8 @@ EOF
     echo "[*] Setting root password to 'kindle'..."
     chroot "$MNT_DIR" /usr/sbin/chpasswd <<< "root:kindle"
 
-    echo "[*] Installing custom chroot bash profile..."
-    cat > "$MNT_DIR/etc/profile.d/kindle.sh" << 'EOF'
-export LANG=C.UTF-8
-export LC_ALL=C.UTF-8
-export PS1='\[\033[1m\]root@kindle:\w# \[\033[0m\]'
-
-alias /exit='echo "Bye!"; exit'
-alias quit='exit'
-
-/landscape() {
-    echo 1 > /sys/class/graphics/fb0/rotate 2>/dev/null || xrandr -o right 2>/dev/null || echo "Rotation failed"
-}
-
-/portrait() {
-    echo 0 > /sys/class/graphics/fb0/rotate 2>/dev/null || xrandr -o normal 2>/dev/null || echo "Rotation failed"
-}
-
-/rotate() {
-    CUR=$(cat /sys/class/graphics/fb0/rotate 2>/dev/null)
-    if [ "$CUR" = "0" ] || [ "$CUR" = "2" ]; then /landscape; else /portrait; fi
-}
-
-/help() {
-    echo "=== Kindle Debian Commands ==="
-    echo "  /exit       - exit chroot"
-    echo "  /landscape  - rotate to landscape"
-    echo "  /portrait   - rotate to portrait"  
-    echo "  /rotate     - toggle rotation"
-    echo "  /info       - system info"
-    echo "  /wifi       - show WiFi IP"
-    echo "  /ssh        - start SSH server"
-    echo "  /help       - this help"
-    echo "==============================="
-}
-
-/info() {
-    echo "=== Kindle Debian ==="
-    echo "Kernel: $(uname -r)"
-    echo "Memory: $(free -m | awk '/Mem:/ {printf "%dMB / %dMB", $3, $2}')"
-    echo "Disk:   $(df -h / | awk 'NR==2 {printf "%s / %s (%s)", $3, $2, $5}')"
-    echo "====================="
-}
-
-/wifi() {
-    IP=$(ip addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
-    [ -n "$IP" ] && echo "WiFi IP: $IP" || echo "No WiFi connection"
-}
-
-/ssh() {
-    if command -v dropbear >/dev/null 2>&1; then
-        killall dropbear 2>/dev/null
-        dropbear -R -p 0.0.0.0:2222 -B 2>/dev/null
-        echo "SSH running on port 2222"
-        /wifi
-    else
-        echo "Installing dropbear..."
-        apt-get update -qq && apt-get install -y -qq dropbear
-        /ssh
-    fi
-}
-
-cat << 'BANNER'
-
-▗▖ ▄▖  █          ▗▖▗▄▖              ▄▄ ▗▖
-▐▌▐▛   ▀          ▐▌▝▜▌             █▀▀▌▐▌                   ▐▌
-▐▙█   ██  ▐▙██▖ ▟█▟▌ ▐▌   ▟█▙      ▐▛   ▐▙██▖ █▟█▌ ▟█▙  ▟█▙ ▐███
-▐██    █  ▐▛ ▐▌▐▛ ▜▌ ▐▌  ▐▙▄▟▌     ▐▌   ▐▛ ▐▌ █▘  ▐▛ ▜▌▐▛ ▜▌ ▐▌
-▐▌▐▙   █  ▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▛▀▀▘     ▐▙   ▐▌ ▐▌ █   ▐▌ ▐▌▐▌ ▐▌ ▐▌
-▐▌ █▖▗▄█▄▖▐▌ ▐▌▝█▄█▌ ▐▙▄ ▝█▄▄▌      █▄▄▌▐▌ ▐▌ █   ▝█▄█▘▝█▄█▘ ▐▙▄
-▝▘ ▝▘▝▀▀▀▘▝▘ ▝▘ ▝▀▝▘  ▀▀  ▝▀▀        ▀▀ ▝▘ ▝▘ ▀    ▝▀▘  ▝▀▘   ▀▀
-
-BANNER
-echo "  Debian | type /help for commands"
-echo ""
-EOF
+    echo "[*] Installing chroot profile..."
+    install_kindle_profile "1" "kindle" "apt-get update -qq && apt-get install -y -qq dropbear" "Debian"
 
 elif [ "$DISTRO" = "alpine" ]; then
     echo "[*] Bootstrapping Alpine Linux $ALPINE_RELEASE (armhf)..."
@@ -304,82 +335,15 @@ elif [ "$DISTRO" = "alpine" ]; then
     
     echo "root:kindle" | chroot "$MNT_DIR" chpasswd
     
-    echo "[*] Installing custom chroot ash profile..."
-    cat > "$MNT_DIR/etc/profile" << 'EOF'
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-export PS1='\[\033[1;32m\]root@alpine:\w# \[\033[0m\]'
-
-alias /exit='echo "Bye!"; exit'
-alias quit='exit'
-
-/landscape() {
-    echo 1 > /sys/class/graphics/fb0/rotate 2>/dev/null
-}
-/portrait() {
-    echo 0 > /sys/class/graphics/fb0/rotate 2>/dev/null
-}
-/rotate() {
-    CUR=$(cat /sys/class/graphics/fb0/rotate 2>/dev/null)
-    if [ "$CUR" = "0" ] || [ "$CUR" = "2" ]; then /landscape; else /portrait; fi
-}
-/help() {
-    echo "=== Kindle Alpine Commands ==="
-    echo "  /exit, quit - exit chroot"
-    echo "  /landscape  - rotate landscape"
-    echo "  /portrait   - rotate portrait"
-    echo "  /rotate     - toggle rotation"
-    echo "  /info       - system info"
-    echo "  /wifi       - show WiFi IP"
-    echo "  /ssh        - start SSH server"
-    echo "  /help       - this help"
-    echo "=============================="
-}
-/info() {
-    echo "=== Kindle Alpine ==="
-    echo "Kernel: $(uname -r)"
-    echo "Memory: $(free -m | awk '/Mem:/ {printf "%dMB / %dMB", $3, $2}')"
-    echo "Disk:   $(df -h / | awk 'NR==2 {printf "%s / %s (%s)", $3, $2, $5}')"
-    echo "====================="
-}
-/wifi() {
-    IP=$(ip addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
-    [ -n "$IP" ] && echo "WiFi IP: $IP" || echo "No WiFi connection"
-}
-/ssh() {
-    if command -v dropbear >/dev/null 2>&1; then
-        killall dropbear 2>/dev/null
-        dropbear -R -p 0.0.0.0:2222 -B 2>/dev/null
-        echo "SSH running on port 2222"
-        /wifi
-    else
-        echo "Installing dropbear..."
-        apk update -q && apk add dropbear
-        /ssh
-    fi
-}
-cat << 'BANNER'
-
-▗▖ ▄▖  █          ▗▖▗▄▖              ▄▄ ▗▖
-▐▌▐▛   ▀          ▐▌▝▜▌             █▀▀▌▐▌                   ▐▌
-▐▙█   ██  ▐▙██▖ ▟█▟▌ ▐▌   ▟█▙      ▐▛   ▐▙██▖ █▟█▌ ▟█▙  ▟█▙ ▐███
-▐██    █  ▐▛ ▐▌▐▛ ▜▌ ▐▌  ▐▙▄▟▌     ▐▌   ▐▛ ▐▌ █▘  ▐▛ ▜▌▐▛ ▜▌ ▐▌
-▐▌▐▙   █  ▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▛▀▀▘     ▐▙   ▐▌ ▐▌ █   ▐▌ ▐▌▐▌ ▐▌ ▐▌
-▐▌ █▖▗▄█▄▖▐▌ ▐▌▝█▄█▌ ▐▙▄ ▝█▄▄▌      █▄▄▌▐▌ ▐▌ █   ▝█▄█▘▝█▄█▘ ▐▙▄
-▝▘ ▝▘▝▀▀▀▘▝▘ ▝▘ ▝▀▝▘  ▀▀  ▝▀▀        ▀▀ ▝▘ ▝▘ ▀    ▝▀▘  ▝▀▘   ▀▀
-
-BANNER
-echo "  Alpine | type /help for commands"
-echo ""
-EOF
+    echo "[*] Installing chroot ash profile..."
+    install_kindle_profile "1;32" "alpine" "apk update -q && apk add dropbear" "Alpine"
 
 elif [ "$DISTRO" = "arch" ]; then
     echo "[*] Bootstrapping Arch Linux ARM (armv7)..."
     TARBALL="/tmp/ArchLinuxARM-armv7-latest.tar.gz"
     
     if [ ! -f "$TARBALL" ]; then
-        echo "[*] Downloading Arch Linux ARM rootfs..."
-        wget -O "$TARBALL" http://os.archlinuxarm.org/os/ArchLinuxARM-armv7-latest.tar.gz || \
-        curl -L -o "$TARBALL" http://os.archlinuxarm.org/os/ArchLinuxARM-armv7-latest.tar.gz
+        fetch http://os.archlinuxarm.org/os/ArchLinuxARM-armv7-latest.tar.gz "$TARBALL"
     fi
     
     echo "[*] Extracting rootfs (this may take a few minutes)..."
@@ -399,74 +363,8 @@ elif [ "$DISTRO" = "arch" ]; then
     cp "$(which qemu-arm-static)" "$MNT_DIR/usr/bin/"
     chroot "$MNT_DIR" bash -c 'echo "root:kindle" | chpasswd'
 
-    echo "[*] Installing custom chroot bash profile..."
-    cat > "$MNT_DIR/etc/profile.d/kindle.sh" << 'EOF'
-export LANG=C.UTF-8
-export LC_ALL=C.UTF-8
-export PS1='\[\033[1;34m\]root@kindle:\w# \[\033[0m\]'
-
-alias /exit='echo "Bye!"; exit'
-alias quit='exit'
-
-/landscape() {
-    echo 1 > /sys/class/graphics/fb0/rotate 2>/dev/null || echo "Rotation failed"
-}
-/portrait() {
-    echo 0 > /sys/class/graphics/fb0/rotate 2>/dev/null || echo "Rotation failed"
-}
-/rotate() {
-    CUR=$(cat /sys/class/graphics/fb0/rotate 2>/dev/null)
-    if [ "$CUR" = "0" ] || [ "$CUR" = "2" ]; then /landscape; else /portrait; fi
-}
-/help() {
-    echo "=== Kindle Arch Commands ==="
-    echo "  exit        - exit chroot"
-    echo "  /landscape  - rotate landscape"
-    echo "  /portrait   - rotate portrait"
-    echo "  /rotate     - toggle rotation"
-    echo "  /info       - system info"
-    echo "  /wifi       - show WiFi IP"
-    echo "  /ssh        - start SSH server"
-    echo "  /help       - this help"
-    echo "============================="
-}
-/info() {
-    echo "=== Kindle Arch ==="
-    echo "Kernel: $(uname -r)"
-    echo "Memory: $(free -m | awk '/Mem:/ {printf "%dMB / %dMB", $3, $2}')"
-    echo "Disk:   $(df -h / | awk 'NR==2 {printf "%s / %s (%s)", $3, $2, $5}')"
-    echo "==================="
-}
-/wifi() {
-    IP=$(ip addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
-    [ -n "$IP" ] && echo "WiFi IP: $IP" || echo "No WiFi connection"
-}
-/ssh() {
-    if command -v dropbear >/dev/null 2>&1; then
-        killall dropbear 2>/dev/null
-        dropbear -R -p 0.0.0.0:2222 -B 2>/dev/null
-        echo "SSH running on port 2222"
-        /wifi
-    else
-        echo "Installing dropbear..."
-        pacman -Sy --noconfirm dropbear
-        /ssh
-    fi
-}
-cat << 'BANNER'
-
-▗▖ ▄▖  █          ▗▖▗▄▖              ▄▄ ▗▖
-▐▌▐▛   ▀          ▐▌▝▜▌             █▀▀▌▐▌                   ▐▌
-▐▙█   ██  ▐▙██▖ ▟█▟▌ ▐▌   ▟█▙      ▐▛   ▐▙██▖ █▟█▌ ▟█▙  ▟█▙ ▐███
-▐██    █  ▐▛ ▐▌▐▛ ▜▌ ▐▌  ▐▙▄▟▌     ▐▌   ▐▛ ▐▌ █▘  ▐▛ ▜▌▐▛ ▜▌ ▐▌
-▐▌▐▙   █  ▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▛▀▀▘     ▐▙   ▐▌ ▐▌ █   ▐▌ ▐▌▐▌ ▐▌ ▐▌
-▐▌ █▖▗▄█▄▖▐▌ ▐▌▝█▄█▌ ▐▙▄ ▝█▄▄▌      █▄▄▌▐▌ ▐▌ █   ▝█▄█▘▝█▄█▘ ▐▙▄
-▝▘ ▝▘▝▀▀▀▘▝▘ ▝▘ ▝▀▝▘  ▀▀  ▝▀▀        ▀▀ ▝▘ ▝▘ ▀    ▝▀▘  ▝▀▘   ▀▀
-
-BANNER
-echo "  Arch | type /help for commands"
-echo ""
-EOF
+    echo "[*] Installing chroot profile..."
+    install_kindle_profile "1;34" "kindle" "pacman -Sy --noconfirm dropbear" "Arch"
 
 elif [ "$DISTRO" = "custom" ]; then
     echo "[*] Building custom rootfs image..."
@@ -480,8 +378,7 @@ elif [ "$DISTRO" = "custom" ]; then
     elif [ -n "$ROOTFS_URL" ]; then
         TARBALL="/tmp/custom-rootfs.tar.gz"
         if [ ! -f "$TARBALL" ]; then
-            echo "[*] Downloading rootfs from $ROOTFS_URL..."
-            wget -O "$TARBALL" "$ROOTFS_URL" || curl -L -o "$TARBALL" "$ROOTFS_URL"
+            fetch "$ROOTFS_URL" "$TARBALL"
         fi
     else
         echo "Error: --distro custom requires --rootfs-url or --rootfs-file"
@@ -513,14 +410,8 @@ elif [ "$DISTRO" = "custom" ]; then
         chroot "$MNT_DIR" bash -c 'echo "root:kindle" | chpasswd' 2>/dev/null || true
     fi
 
-    echo "[*] Installing custom chroot profile..."
-    mkdir -p "$MNT_DIR/etc/profile.d"
-    cat > "$MNT_DIR/etc/profile.d/kindle.sh" << 'EOF'
-export LANG=C.UTF-8
-export PS1='\[\033[1;35m\]root@kindle:\w# \[\033[0m\]'
-alias quit='exit'
-echo "Kindle Custom Linux - enjoy!"
-EOF
+    echo "[*] Installing chroot profile..."
+    install_kindle_profile "1;35" "kindle" "echo \"Run your package manager to install dropbear\"" "Custom"
 
 else
     echo "Error: Unsupported distribution '$DISTRO'."

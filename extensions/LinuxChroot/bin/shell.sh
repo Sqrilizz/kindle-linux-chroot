@@ -2,25 +2,35 @@
 
 KTERM=/mnt/us/extensions/kterm
 
-IMAGES=""
+# Prints the Nth .ext3 file found in /mnt/us/ (portable, tolerates spaces)
+pick_image() {
+    N=0
+    for f in /mnt/us/*.ext3; do
+        [ -f "$f" ] || continue
+        N=$((N + 1))
+        if [ "$N" -eq "$1" ]; then
+            echo "$f"
+            return
+        fi
+    done
+}
+
 COUNT=0
 for f in /mnt/us/*.ext3; do
     [ -f "$f" ] || continue
     COUNT=$((COUNT + 1))
-    IMAGES="${IMAGES} ${f}"
 done
 
 if [ "$COUNT" -eq 0 ]; then
     echo "No rootfs image found! Place <distro>.ext3 in /mnt/us/"
     exit 1
 elif [ "$COUNT" -eq 1 ]; then
-    IMG=$(echo "$IMAGES" | tr -s ' ' | cut -d' ' -f2)
-    NAME=$(basename "$IMG" .ext3)
-    MNT="/tmp/${NAME}"
+    IMG=$(pick_image 1)
 else
     echo "=== Select distro ==="
     I=1
-    for f in $IMAGES; do
+    for f in /mnt/us/*.ext3; do
+        [ -f "$f" ] || continue
         NAME=$(basename "$f" .ext3)
         echo "  ${I}) ${NAME}"
         I=$((I + 1))
@@ -29,15 +39,20 @@ else
     printf "Choice [1]: "
     read CHOICE
     [ -z "$CHOICE" ] && CHOICE=1
-    IMG=$(echo "$IMAGES" | tr -s ' ' | cut -d' ' -f$((CHOICE + 1)))
-    NAME=$(basename "$IMG" .ext3)
-    MNT="/tmp/${NAME}"
+    case "$CHOICE" in
+        *[!0-9]*) CHOICE=1 ;;
+    esac
+    [ "$CHOICE" -gt "$COUNT" ] && CHOICE=1
+    IMG=$(pick_image "$CHOICE")
 fi
 
 if [ -z "$IMG" ] || [ ! -f "$IMG" ]; then
     echo "Invalid selection"
     exit 1
 fi
+
+NAME=$(basename "$IMG" .ext3)
+MNT="/tmp/${NAME}"
 
 if ! mount | grep -q "$MNT"; then
     mkdir -p "$MNT"
