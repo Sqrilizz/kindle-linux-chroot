@@ -340,13 +340,15 @@ elif [ "$DISTRO" = "alpine" ]; then
     APK_STATIC="$APK_DIR/sbin/apk.static"
     chmod +x "$APK_STATIC"
     
-    "$APK_STATIC" --repository "http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main" \
-                  --update-cache \
-                  --allow-untrusted \
-                  --arch armhf \
-                  --root "$MNT_DIR" \
-                  init \
-                  alpine-base alpine-keys apk-tools-static
+    "$APK_STATIC" add \
+        --initdb \
+        --arch armhf \
+        --root "$MNT_DIR" \
+        --repository "http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main" \
+        --repository "http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/community" \
+        --update-cache \
+        --allow-untrusted \
+        alpine-base alpine-keys apk-tools-static
                   
     echo "nameserver 8.8.8.8" > "$MNT_DIR/etc/resolv.conf"
     echo "http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main" > "$MNT_DIR/etc/apk/repositories"
