@@ -29,6 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install qemu and binfmt (needed to run busybox inside the rootfs)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static binfmt-support
+
       - name: Build alpine.ext3
         run: sudo bash scripts/build_rootfs.sh --distro alpine --size 256
 

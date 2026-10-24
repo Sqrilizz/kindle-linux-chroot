@@ -348,7 +348,18 @@ elif [ "$DISTRO" = "alpine" ]; then
         --repository "http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/community" \
         --update-cache \
         --allow-untrusted \
+        --no-scripts \
         alpine-base alpine-keys apk-tools-static
+
+    # Package trigger scripts (32-bit armhf busybox) cannot run on a foreign
+    # host, so busybox applet symlinks (/bin/sh etc.) are installed manually.
+    cp "$(which qemu-arm-static)" "$MNT_DIR/usr/bin/" 2>/dev/null || true
+    chroot "$MNT_DIR" /bin/busybox --install -s 2>/dev/null || true
+    if [ ! -e "$MNT_DIR/bin/sh" ]; then
+        echo "[*] Fallback: creating essential busybox symlinks manually..."
+        ln -sf busybox "$MNT_DIR/bin/sh"
+        ln -sf busybox "$MNT_DIR/usr/sbin/chpasswd"
+    fi
                   
     echo "nameserver 8.8.8.8" > "$MNT_DIR/etc/resolv.conf"
     echo "http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main" > "$MNT_DIR/etc/apk/repositories"
