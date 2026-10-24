@@ -40,7 +40,7 @@ interactive_menu() {
     echo "    5) Custom       (provide your own rootfs)"
 
     printf "  Choice [1]: "
-    read DISTRO_CHOICE < /dev/tty
+    read -r DISTRO_CHOICE < /dev/tty
     [ -z "$DISTRO_CHOICE" ] && DISTRO_CHOICE=1
 
     case $DISTRO_CHOICE in
@@ -60,13 +60,13 @@ interactive_menu() {
     else
         DEFAULT_SIZE=1024
     fi
-    printf "  Image size in MB [$DEFAULT_SIZE]: "
-    read SIZE_INPUT < /dev/tty
+    printf '  Image size in MB [%s]: ' "$DEFAULT_SIZE"
+    read -r SIZE_INPUT < /dev/tty
     SIZE_MB="${SIZE_INPUT:-$DEFAULT_SIZE}"
 
     echo ""
     printf "  Output directory [.]: "
-    read OUT_INPUT < /dev/tty
+    read -r OUT_INPUT < /dev/tty
     OUTPUT_DIR="${OUT_INPUT:-.}"
 
     if [ "$DISTRO" = "custom" ]; then
@@ -75,11 +75,11 @@ interactive_menu() {
         echo "    1) Download from URL"
         echo "    2) Local file"
         printf "  Choice [1]: "
-        read CUSTOM_CHOICE < /dev/tty
+        read -r CUSTOM_CHOICE < /dev/tty
         [ -z "$CUSTOM_CHOICE" ] && CUSTOM_CHOICE=1
         if [ "$CUSTOM_CHOICE" = "2" ]; then
             printf "  Path to tarball: "
-            read ROOTFS_FILE < /dev/tty
+            read -r ROOTFS_FILE < /dev/tty
         else
             echo ""
             echo "  Where to get a direct link (armv7 rootfs):"
@@ -92,7 +92,7 @@ interactive_menu() {
             echo "    AOSC:    https://releases.aosc.io/"
             echo ""
             printf "  URL to tarball: "
-            read ROOTFS_URL < /dev/tty
+            read -r ROOTFS_URL < /dev/tty
         fi
     fi
 
@@ -104,7 +104,7 @@ interactive_menu() {
     echo "  ─────────────────────────────────────"
     echo ""
     printf "  Proceed? [Y/n]: "
-    read CONFIRM < /dev/tty
+    read -r CONFIRM < /dev/tty
     case "$CONFIRM" in
         n|N|no|No) echo "  Aborted."; exit 0 ;;
     esac
@@ -323,7 +323,7 @@ elif [ "$DISTRO" = "alpine" ]; then
     APK_STATIC="$APK_DIR/sbin/apk.static"
     chmod +x "$APK_STATIC"
     
-    "$APK_STATIC" --repository http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main \
+    "$APK_STATIC" --repository "http://dl-cdn.alpinelinux.org/alpine/${ALPINE_RELEASE}/main" \
                   --update-cache \
                   --allow-untrusted \
                   --arch armhf \

@@ -40,7 +40,7 @@ else
     done
     echo "====================="
     printf "Choice [1]: "
-    read CHOICE
+    read -r CHOICE
     [ -z "$CHOICE" ] && CHOICE=1
     case "$CHOICE" in
         *[!0-9]*) CHOICE=1 ;;
@@ -78,7 +78,7 @@ else
     SHELL_CMD="/bin/sh -l"
 fi
 
-DPI=$(cat /var/log/Xorg.0.log 2>/dev/null | grep DPI | sed -n 's/.*(\([0-9]\+\), [0-9]\+).*/\1/p')
+DPI=$(grep DPI /var/log/Xorg.0.log 2>/dev/null | sed -n 's/.*(\([0-9]\+\), [0-9]\+).*/\1/p')
 PARAM=""
 if [ -n "$DPI" ] && [ "$DPI" -gt 290 ] 2>/dev/null; then
     PARAM="-l ${KTERM}/layouts/keyboard-300dpi.xml"
@@ -89,4 +89,7 @@ fi
 export TERM=xterm
 export TERMINFO=${KTERM}/vte/terminfo
 
+# Unquoted ${PARAM} is intentional: when empty it must disappear completely,
+# kterm would otherwise receive an empty argument and fail.
+# shellcheck disable=SC2086
 ${KTERM}/bin/kterm ${PARAM} -e "chroot $MNT $SHELL_CMD" &

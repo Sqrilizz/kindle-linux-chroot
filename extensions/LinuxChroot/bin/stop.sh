@@ -4,6 +4,8 @@ unmount_chroot() {
     MNT="$1"
     if mount | grep -q "$MNT"; then
         echo "Stopping $MNT..."
+        # Intentional word splitting: kill is called with each PID as an argument
+        # shellcheck disable=SC2046
         kill -9 $(lsof -t "$MNT/" 2>/dev/null) 2>/dev/null
         umount "$MNT/run/dbus/" 2>/dev/null
         umount "$MNT/sys" 2>/dev/null

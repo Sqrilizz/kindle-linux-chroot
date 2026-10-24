@@ -506,11 +506,9 @@ This project was developed and tested on the following device:
 
 ## Contributing
 
-PRs welcome! Ideas for contribution:
-- ~~Add more distro support (Void)~~ — done, `--distro void` (Gentoo and postmarketOS still welcome)
-- ~~Add a script to resize ext3 images~~ — done, `scripts/resize_ext3.sh`
-- ~~Write a Docker-based builder for macOS users~~ — done, `scripts/build_docker.sh` + `docs/docker-build.md`
-- Improve KUAL menu with status indicators — partially done (`generate_menu.sh` shows mounted images; "Stop first" UX needs on-device feedback)
+PRs welcome! Automation notes:
+- CI (`.github/workflows/ci.yml`) runs shellcheck plus full smoke builds of debian, alpine, void and a resize-tool test on every push
+- If your shell script changes, run `shellcheck` locally first - CI is strict
 
 ---
 

@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+
+      - name: Syntax check
+        run: |
+          bash -n scripts/*.sh
+          sh -n extensions/LinuxChroot/bin/*.sh
+
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh extensions/LinuxChroot/bin/*.sh
+
+  build-alpine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build alpine.ext3
+        run: sudo bash scripts/build_rootfs.sh --distro alpine --size 256
+
+      - name: Verify image contents
+        run: |
+          debugfs -R "cat /etc/profile.d/kindle.sh" alpine.ext3 > /tmp/profile.sh
+          bash -n /tmp/profile.sh
+          ! grep -q '__PKG_INSTALL__\|__DISTRO_NAME__' /tmp/profile.sh
+          debugfs -R "cat /etc/apk/repositories" alpine.ext3 | grep -q dl-cdn.alpinelinux.org
+          echo "alpine image OK"
+
+  build-debian:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install builder dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq debootstrap qemu-user-static binfmt-support
+
+      - name: Build debian.ext3
+        run: sudo bash scripts/build_rootfs.sh --distro debian --size 1024
+
+      - name: Verify image contents
+        run: |
+          debugfs -R "cat /etc/profile.d/kindle.sh" debian.ext3 > /tmp/profile.sh
+          bash -n /tmp/profile.sh
+          ! grep -q '__PKG_INSTALL__\|__DISTRO_NAME__' /tmp/profile.sh
+          debugfs -R "cat /etc/apt/sources.list" debian.ext3 | grep -q trixie
+          echo "debian image OK"
+
+  build-void:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install builder dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static binfmt-support curl xz-utils
+
+      - name: Build void.ext3
+        run: sudo bash scripts/build_rootfs.sh --distro void --size 1024
+
+      - name: Verify image contents
+        run: |
+          debugfs -R "cat /etc/profile.d/kindle.sh" void.ext3 > /tmp/profile.sh
+          bash -n /tmp/profile.sh
+          ! grep -q '__PKG_INSTALL__\|__DISTRO_NAME__' /tmp/profile.sh
+          echo "void image OK"
+
+  resize-tool:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare test image
+        run: |
+          truncate -s 64M /tmp/test.ext3
+          mkfs.ext3 -F /tmp/test.ext3
+
+      - name: Grow 64MB -> 128MB
+        run: |
+          echo y | sudo bash scripts/resize_ext3.sh /tmp/test.ext3 128
+          ACTUAL=$(stat -c%s /tmp/test.ext3)
+          echo "size=[$ACTUAL]"
+          [ "$ACTUAL" -eq $((128 * 1048576)) ]
+
+      - name: Shrink 128MB -> 48MB
+        run: |
+          echo y | sudo bash scripts/resize_ext3.sh /tmp/test.ext3 48
+          ACTUAL=$(stat -c%s /tmp/test.ext3)
+          echo "size=[$ACTUAL]"
+          [ "$ACTUAL" -le $((48 * 1048576)) ] && [ "$ACTUAL" -gt $((44 * 1048576)) ]

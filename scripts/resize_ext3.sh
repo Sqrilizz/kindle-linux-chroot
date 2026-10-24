@@ -77,7 +77,7 @@ if [ "$CAUSE" = "shrink" ] && [ "$NEW_MB" -gt "$FS_MB" ]; then
 fi
 
 printf "Proceed? '[y]es/N' : "
-read CONFIRM < /dev/tty 2>/dev/null || read CONFIRM
+read -r CONFIRM < /dev/tty 2>/dev/null || read -r CONFIRM
 case "$CONFIRM" in y|Y|yes|Yes) ;; *) echo "Aborted."; exit 0;; esac
 
 # 1. Make the file the right size
