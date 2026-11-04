@@ -6,9 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start"><img src="https://img.shields.io/badge/get_started-blue?style=for-the-badge" alt="Get Started"></a>
-  <a href="#supported-distros"><img src="https://img.shields.io/badge/distros-3-green?style=for-the-badge" alt="Distros"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow?style=for-the-badge" alt="License"></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/get_started-blue?style=for-the-badge"
 </p>
 
 <p align="center">
