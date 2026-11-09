@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Turn your Amazon Kindle into a pocket Linux computer.</strong><br>
-  Run Debian, Alpine, Arch, or any ARM distro  without touching the stock system.
+  Run Debian, Alpine, Arch, or any ARM distro  without touching the stock system
 </p>
 
 <p align="center">
